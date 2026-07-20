@@ -117,6 +117,17 @@ function normalizarTexto(txt){
   return (txt||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 }
 
+// Ordena em ordem alfabética (ignorando acento/maiúscula), usado em toda
+// lista de cadastro/seleção do app (categorias, grupos, cargos, usuários,
+// campanhas...). Não se aplica a listas de lançamentos/histórico, que
+// continuam por data, nem ao resumo de receitas/despesas por categoria dos
+// relatórios, que continua por valor (mais útil pra enxergar o que mais
+// pesa no caixa).
+function ordenarPorNome(lista, campo){
+  const chave = campo || 'nome';
+  return [...lista].sort((a,b) => (a[chave]||'').localeCompare(b[chave]||'', 'pt-BR', {sensitivity:'base'}));
+}
+
 // Busca fiéis em páginas de 50 (por nome, com ou sem termo de busca por
 // prefixo) em vez de carregar a lista inteira de uma vez — assim a tela
 // continua rápida mesmo com muitos milhares de fiéis cadastrados. A busca
@@ -606,8 +617,8 @@ function popularCategoriaFiltroLancamentos(){
   const sel = $('lancCategoriaFiltro');
   const atual = sel.value;
   const opts = [
-    ...state.categoriasReceita.map(c => ({ id:c.id, label:`${c.nome} (Receita)` })),
-    ...state.categoriasDespesa.map(c => ({ id:c.id, label:`${c.nome} (Despesa)` })),
+    ...ordenarPorNome(state.categoriasReceita).map(c => ({ id:c.id, label:`${c.nome} (Receita)` })),
+    ...ordenarPorNome(state.categoriasDespesa).map(c => ({ id:c.id, label:`${c.nome} (Despesa)` })),
   ];
   sel.innerHTML = '<option value="">Todas as categorias</option>' +
     opts.map(o => `<option value="${o.id}">${o.label}</option>`).join('');
@@ -777,7 +788,7 @@ $('lFormData').addEventListener('change', ()=>{ if(!state.editandoLancId) sincro
 $('lFormTipo').addEventListener('change', popularCategoriaSelect);
 function popularCategoriaSelect(){
   const tipo = $('lFormTipo').value;
-  const lista = tipo === 'receita' ? state.categoriasReceita : state.categoriasDespesa;
+  const lista = ordenarPorNome(tipo === 'receita' ? state.categoriasReceita : state.categoriasDespesa);
   $('lFormCategoria').innerHTML = lista.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
   $('lFormFielWrap').style.display = tipo === 'receita' ? 'block' : 'none';
 }
@@ -932,8 +943,8 @@ function abrirModalFiel(f){
   $('fFormCpf').value = f?.cpf || '';
   $('fFormRg').value = f?.rg || '';
   $('fFormObs').value = f?.observacoes || '';
-  $('fFormCargo').innerHTML = '<option value="">—</option>' + state.cargos.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
-  $('fFormGrupo').innerHTML = '<option value="">—</option>' + state.grupos.map(g=>`<option value="${g.id}">${g.nome}</option>`).join('');
+  $('fFormCargo').innerHTML = '<option value="">—</option>' + ordenarPorNome(state.cargos).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
+  $('fFormGrupo').innerHTML = '<option value="">—</option>' + ordenarPorNome(state.grupos).map(g=>`<option value="${g.id}">${g.nome}</option>`).join('');
   $('fFormCargo').value = f?.cargoId || '';
   $('fFormGrupo').value = f?.grupoId || '';
   $('modalFiel').classList.add('active');
@@ -971,7 +982,7 @@ document.querySelectorAll('.tab-btn').forEach(b=>{
 });
 function renderCadastros(){
   const editavel = podeEditarAba('cadastros');
-  const lista = state[state.cadTab];
+  const lista = ordenarPorNome(state[state.cadTab]);
   $('cadNovoNome').parentElement.style.display = editavel ? 'flex' : 'none';
   $('cadLista').innerHTML = lista.length ? lista.map(item => `
     <div class="list-row">
@@ -1226,7 +1237,7 @@ async function desenharListaCampanhas(){
   const filtro = $('campanhasFiltroStatus').value;
   let lista = state.campanhas;
   if(filtro) lista = lista.filter(c=>c.status===filtro);
-  lista = [...lista].sort((a,b)=> (b.dataInicio||'').localeCompare(a.dataInicio||''));
+  lista = ordenarPorNome(lista);
   $('campanhasEmpty').style.display = lista.length ? 'none' : 'block';
 
   const comMeta = lista.filter(c=>c.meta);
@@ -1520,9 +1531,10 @@ async function gerarPdfCampanha(){
 $('btnExportarCampanhas').addEventListener('click', async ()=>{
   if(!state.campanhas.length){ toast('Nenhuma campanha para exportar.', true); return; }
   toast('Preparando exportação...');
-  const totaisEntrada = await Promise.all(state.campanhas.map(c => somarCampanha(c.id,'entrada')));
-  const totaisSaida = await Promise.all(state.campanhas.map(c => somarCampanha(c.id,'saida')));
-  const linhas = state.campanhas.map((c,i) => ({
+  const campanhasOrdenadas = ordenarPorNome(state.campanhas);
+  const totaisEntrada = await Promise.all(campanhasOrdenadas.map(c => somarCampanha(c.id,'entrada')));
+  const totaisSaida = await Promise.all(campanhasOrdenadas.map(c => somarCampanha(c.id,'saida')));
+  const linhas = campanhasOrdenadas.map((c,i) => ({
     Nome: c.nome, Tipo: labelTipoCampanha(c.tipo), Status: c.status==='ativa'?'Ativa':'Encerrada',
     Responsável: c.responsavelNome || '', 'Data Início': c.dataInicio ? formatarDataBR(c.dataInicio) : '',
     'Data Fim': c.dataFim ? formatarDataBR(c.dataFim) : '',
@@ -1739,7 +1751,7 @@ $('btnSalvarIgreja').addEventListener('click', async ()=>{
 // ---------- USUÁRIOS ----------
 async function renderUsuarios(){
   const usuariosSnap = await getDocs(collection(db,'igrejas',state.igrejaAtualId,'usuarios'));
-  const usuarios = usuariosSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const usuarios = ordenarPorNome(usuariosSnap.docs.map(d => ({ id: d.id, ...d.data() })));
   $('usuariosTbody').innerHTML = usuarios.map(u=>{
     const souEu = u.id === state.user.uid;
     return `<tr>
@@ -1771,11 +1783,11 @@ async function renderUsuarios(){
   });
 
   const convitesSnap = await getDocs(collection(db,'igrejas',state.igrejaAtualId,'convites'));
-  $('convitesLista').innerHTML = convitesSnap.docs.length ? convitesSnap.docs.map(d=>{
-    const c = d.data();
-    return `<div class="list-row"><span>${c.email} — <span class="papel-badge">${PAPEL_LABEL[c.papel]}</span></span>
-      <button class="btn btn-sm btn-danger" data-cancel="${d.id}">Cancelar</button></div>`;
-  }).join('') : `<div class="empty">Nenhum convite pendente.</div>`;
+  const convites = ordenarPorNome(convitesSnap.docs.map(d=>({id:d.id, ...d.data()})), 'email');
+  $('convitesLista').innerHTML = convites.length ? convites.map(c => `
+    <div class="list-row"><span>${c.email} — <span class="papel-badge">${PAPEL_LABEL[c.papel]}</span></span>
+      <button class="btn btn-sm btn-danger" data-cancel="${c.id}">Cancelar</button></div>`
+  ).join('') : `<div class="empty">Nenhum convite pendente.</div>`;
   $('convitesLista').querySelectorAll('[data-cancel]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       await deleteDoc(doc(db,'igrejas',state.igrejaAtualId,'convites', b.dataset.cancel));
@@ -1956,7 +1968,7 @@ $('btnExportarLanc').addEventListener('click', async ()=>{
 
 $('btnExportarFieis').addEventListener('click', async ()=>{
   toast('Preparando exportação...');
-  const q = query(collection(db,'igrejas',state.igrejaAtualId,'membros'), orderBy('nome'), limit(5000));
+  const q = query(collection(db,'igrejas',state.igrejaAtualId,'membros'), orderBy('nomeBusca'), limit(5000));
   const snaps = await getDocs(q);
   const todos = snaps.docs.map(d=>({id:d.id, ...d.data()}));
   if(!todos.length){ toast('Nenhum fiel para exportar.', true); return; }

@@ -141,6 +141,22 @@ Cada lançamento agora tem dois campos de tempo separados:
 Por padrão, a competência acompanha a data escolhida — mas dá pra mudar
 manualmente, por exemplo quando um dízimo de junho é pago só em julho.
 
+## Ordem alfabética nas listas de cadastro
+Passou a ser padrão em todo o app: **Categorias de Receita/Despesa,
+Grupos, Cargos** (tanto na tela de Categorias e Grupos quanto nos selects
+que usam essas listas em outros formulários — Lançamento, filtro de
+Lançamentos, cadastro de Fiel), além de **Usuários**, **Convites
+pendentes** e **Campanhas**.
+
+Duas listas ficaram de fora de propósito, porque ordenar alfabeticamente
+as deixaria menos úteis:
+- **Lançamentos** (tabela) e "Últimos lançamentos" do Painel — continuam
+  por data, já que são histórico/atividade recente
+- **Receitas/Despesas por categoria** nos Relatórios — continua por valor
+  (do maior pro menor), pra facilitar ver o que mais pesa no caixa
+
+Se quiser que algum desses dois também vire alfabético, é só pedir.
+
 ## Exportar/Importar em Campanhas
 - **Exportar lista** (tela Campanhas): planilha com todas as campanhas —
   nome, tipo, status, responsável, datas, meta, total arrecadado/gasto e saldo
