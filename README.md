@@ -1,0 +1,245 @@
+# SOFT+ Financeiro de Igrejas
+
+App multi-igreja de controle financeiro, com Firebase (Auth + Firestore) como backend
+e hospedagem estática no GitHub Pages.
+
+## Arquivos
+- `index.html` — telas do app
+- `app.js` — toda a lógica (login, Firestore, telas)
+- `firebase-config.js` — chaves do seu projeto Firebase (já preenchido)
+- `firestore.rules` — regras de segurança (copiar para o Console do Firebase)
+
+## 1. Colocar as regras de segurança no ar
+As regras controlam quem pode ler/escrever cada dado (isso é o que garante que
+uma igreja não veja os dados da outra).
+
+1. Vá em **console.firebase.google.com** → seu projeto → **Firestore Database** → aba **Regras**
+2. Apague o conteúdo padrão e cole o conteúdo do arquivo `firestore.rules`
+3. Clique em **Publicar**
+
+## 2. Publicar no GitHub Pages
+1. Crie um repositório novo no GitHub (pode ser privado ou público)
+2. Suba os 4 arquivos (`index.html`, `app.js`, `firebase-config.js`, e opcionalmente
+   o `firestore.rules` só como referência)
+3. Vá em **Settings → Pages** do repositório
+4. Em "Source", selecione a branch `main` e pasta `/ (root)`
+5. Salve — em 1–2 minutos seu app estará em algo como
+   `https://seu-usuario.github.io/nome-do-repo/`
+
+⚠️ No Firebase, vá em **Authentication → Settings → Domínios autorizados** e
+adicione `seu-usuario.github.io` (senão o login vai falhar por segurança).
+
+## 3. Primeiro acesso
+1. Abra o link do GitHub Pages
+2. Clique em **"Criar conta"**, informe seu nome, e-mail e senha
+3. Você cai direto na tela **"+ Nova Igreja"** — cadastre a primeira igreja
+4. Pronto: você já é **Administrador** dela. As categorias de Dízimo, Oferta
+   de Culto, Oferta Avulsa (receitas) e Prebenda Pastoral, Contas de Consumo,
+   Manutenção (despesas) já vêm criadas — edite/apague como quiser em
+   **Categorias e Grupos**.
+
+## 4. Adicionando outras igrejas e usuários
+- Qualquer usuário logado pode criar uma nova igreja pelo menu **"+ Nova Igreja"**
+  (ele vira admin dela).
+- Para dar acesso a outra pessoa numa igreja que você administra: vá em
+  **Usuários → Convidar usuário**, informe o e-mail dela e o papel
+  (Administrador / Cadastrador / Leitura). Quando essa pessoa criar conta (ou
+  entrar, se já tiver conta) usando **esse mesmo e-mail**, o acesso é liberado
+  automaticamente.
+- Um mesmo usuário pode ter papéis diferentes em igrejas diferentes — o troca-igreja
+  fica no topo do menu lateral.
+
+## 5. Sobre os índices do Firestore
+As consultas de "em quais igrejas eu estou" e "convite pendente pra mim"
+usam coleções simples de nível raiz (`membrosIndice`, `convitesIndice`) — o
+Firestore cria o índice automaticamente, sem passo manual.
+
+Já a paginação de **Fiéis** e **Lançamentos**, o **Painel** e o **fluxo de
+caixa** usam consultas um pouco mais elaboradas (filtro + ordenação, ou
+soma agregada) para não precisar baixar listas inteiras. Na primeira vez
+que você usar essas telas, pode aparecer no console do navegador um aviso
+pedindo para criar um índice, com um link direto do Firebase — é só clicar,
+confirmar, esperar cerca de 1 minuto e recarregar a página (mesmo processo
+que já fizemos antes). Se algum índice desses ainda não existir, o app
+automaticamente busca os dados do jeito antigo (mais lento, mas funciona)
+até você criar o índice.
+
+## 6. Exportar dados
+- Na tela **Lançamentos**, o botão **"Exportar"** baixa um `.xlsx` com os
+  lançamentos do mês/tipo filtrado no momento.
+- Na tela **Fiéis**, o botão **"Exportar"** baixa um `.xlsx` com todos os
+  fiéis cadastrados.
+
+## 7. Importar a planilha antiga do AppSheet
+Na tela **"Importar dados"** (menu lateral, só aparece para Administradores):
+
+0. Se quiser preencher os dados na mão (em vez de usar um export real do
+   AppSheet), clique em **"⬇ Baixar modelo de planilha"** — ele já vem com
+   todas as abas, cabeçalhos certos, uma aba de **Instruções** explicando como
+   os IDs conectam uma aba na outra (ex: qual fiel fez qual lançamento), e uma
+   linha de exemplo em cada aba mostrando o preenchimento correto.
+1. Escolha primeiro, no topo do menu, a igreja para a qual quer importar
+2. Selecione o arquivo `.xlsx` original do AppSheet (mesmas abas: `cad_fieis`,
+   `cad_grupo`, `cad_carg_func`, `cad_receitas`, `cad_despesas`, `cad_igreja`,
+   `lanc_receita`, `lanc_despesa`, `bloq_competencia`)
+3. Clique em **"Iniciar importação"** e acompanhe o log na tela
+
+O que é migrado automaticamente: grupos, cargos, fiéis (com grupo/cargo já
+vinculados), categorias de receita e despesa, dados cadastrais da igreja,
+todos os lançamentos de receita e despesa (com categoria e fiel vinculados,
+quando existirem) e os meses que já estavam bloqueados.
+
+**Não é migrado**: comprovantes/fotos anexados (já que essa versão não usa
+anexos) e o módulo de Campanhas (fica de fora por enquanto, como combinamos).
+
+⚠️ Rode a importação **uma vez só** por igreja — rodar de novo duplica os
+dados, porque cada execução cria registros novos. Se precisar refazer,
+apague os lançamentos importados antes (dá pra reconhecer pelo campo interno
+`importado: true` no Firestore).
+
+## Papéis e permissões por aba
+Cada usuário tem um **papel** (o que ele pode fazer) e uma lista de **abas
+liberadas** (o que ele consegue ver/acessar), configurados na hora do convite
+ou depois em Usuários → Editar.
+
+**Papéis:**
+- **Administrador** — acesso total: edita dados da igreja, usuários, bloqueia
+  competências, lança e exclui tudo, em qualquer aba
+- **Cadastrador** — lança e edita dentro das abas que tiver liberadas
+- **Leitura** — só visualiza as abas liberadas, não edita nada
+
+**Abas configuráveis por usuário:** Lançamentos, Fiéis, Categorias e Grupos,
+Relatórios, Competências. Painel e Dados da Igreja (visualização) ficam
+sempre visíveis para qualquer membro; Usuários e Importar dados são sempre
+exclusivos de Administrador, independente da configuração.
+
+⚠️ Relatórios usa os dados de Lançamentos — se liberar "Relatórios" pra
+alguém, libere "Lançamentos" também, senão a tela fica vazia. O mesmo vale
+para o formulário de lançamento vincular um fiel: sem a aba "Fiéis", esse
+campo fica sem opções (mas ainda dá pra lançar sem vincular a ninguém).
+
+Contas criadas antes dessa atualização continuam com acesso total até que um
+admin ajuste as permissões delas em Usuários → Editar.
+
+## Busca de fiéis sem diferenciar maiúscula/acento
+Agora buscar "kennedy" encontra "Kennedy", "joao" encontra "João", etc.
+
+⚠️ **Passo único e obrigatório após essa atualização**: como os fiéis
+cadastrados antes dessa mudança não têm o campo novo usado pra isso, a tela
+de **Fiéis** pode aparecer vazia (ou faltando gente) até você corrigir uma
+vez. Vá em **Fiéis** → botão **"Corrigir busca de fiéis antigos"** (só
+aparece para Administradores) → clique uma vez → pronto, não precisa
+repetir depois. Fiéis novos já são salvos certinho automaticamente.
+
+## Competência independente da data
+Cada lançamento agora tem dois campos de tempo separados:
+- **Data** — quando o pagamento foi de fato feito/recebido (usada para
+  ordenar e exibir nas tabelas e PDFs)
+- **Competência** — a que mês/ano o lançamento se refere (usada para
+  filtros, painel, relatórios e bloqueio de competência)
+
+Por padrão, a competência acompanha a data escolhida — mas dá pra mudar
+manualmente, por exemplo quando um dízimo de junho é pago só em julho.
+
+## Cadastro direto de usuário (sem e-mail)
+O app nunca chegou a enviar e-mails de verdade — o antigo "convite" só
+liberava o acesso quando a pessoa entrava com aquele e-mail específico, o
+que confundia. Agora, em **Usuários → "+ Cadastrar usuário"**, o
+administrador:
+1. Digita nome, e-mail e uma senha temporária (tem um botão "Gerar" pra
+   sugerir uma)
+2. Escolhe papel e abas
+3. Clica em Cadastrar — a conta já é criada e o acesso já libera na hora
+4. Passa o e-mail e a senha pra pessoa (WhatsApp, papel, o que for) — ela
+   entra direto, sem precisar "criar conta"
+
+Se o e-mail digitado já tiver uma conta própria no app (de outra igreja, por
+exemplo), o sistema detecta isso automaticamente e cai de volta no modelo de
+convite antigo (a pessoa entra com a conta que já tem, e o acesso libera
+sozinho) — nesse caso específico ainda não tem como o admin definir a senha
+dela, já que a conta já existe.
+
+## Totais e saldo anterior
+- **Lançamentos**: agora mostra o total de receitas, despesas e saldo do
+  período filtrado, acima da tabela
+- **Painel**: mostra também o saldo anterior (tudo antes do mês selecionado)
+  e o saldo atual acumulado
+- **Fluxo de caixa anual** (tela e PDF): ganhou uma coluna de saldo
+  anterior mês a mês
+
+## Personalizar com a logo da igreja
+Em Dados da Igreja, o admin pode enviar uma imagem (PNG/JPG) que é
+redimensionada automaticamente no navegador e aparece no topo do menu
+lateral e no cabeçalho dos PDFs. Como decidimos não usar o Firebase Storage
+(que exige plano pago), a logo fica guardada como texto (base64) dentro do
+próprio documento da igreja no Firestore — funciona bem para logos simples,
+mas não é indicado para fotos grandes ou de altíssima resolução.
+
+Também em Dados da Igreja:
+- **Nome para cabeçalho dos relatórios** — o nome que aparece no topo dos
+  PDFs pode ser diferente do "Nome da igreja" usado no menu (útil para um
+  nome mais formal, com sigla da denominação, etc.)
+- **Pastor** e **Tesoureiro** — agora são escolhidos buscando entre os
+  fiéis já cadastrados (em vez de texto livre), e os nomes escolhidos
+  aparecem automaticamente como assinatura no rodapé de todo relatório em
+  PDF
+
+## Exportar relatórios em PDF
+Na tela Relatórios:
+- **PDF do mês** — no formato "relatório de tesouraria de igreja": relação
+  de dizimistas (separada de ofertas), totais, relação de despesas, balanço
+  final (com saldo anterior calculado automaticamente a partir do
+  histórico) e assinatura de Pastor/Tesoureiro
+- **PDF do ano** — fluxo de caixa anual, mês a mês, com totais
+- **PDF do fiel** — extrato completo de contribuições de um fiel específico
+
+Uma categoria de receita entra em "Dízimos" se o nome dela contiver a
+palavra "dízimo" (ex: "Dízimo", "Dízimos"); qualquer outra categoria de
+receita entra em "Ofertas" automaticamente — não precisa configurar nada
+além do nome da categoria.
+
+## Preparado para crescer (paginação e agregação)
+- **Fiéis**: a lista carrega 50 por vez ("Carregar mais"), com busca por
+  nome — não baixa mais todo mundo de uma vez
+- **Lançamentos**: a tabela também carrega 50 por vez dentro do mês/filtro
+  escolhido
+- **Painel**: os totais do mês são calculados por soma agregada direto no
+  Firestore, sem baixar cada lançamento
+- **Fluxo de caixa anual** (tela e PDF): também usa soma agregada por mês,
+  em vez de baixar o ano inteiro de uma vez
+- Os campos "Fiel" (no lançamento e nos relatórios) agora são de busca —
+  digite o nome e escolha, em vez de rolar uma lista enorme
+- Exportar Fiéis (XLSX) busca os dados na hora, com limite de 5.000 por vez
+
+Com isso, o app aguenta tranquilamente milhares de fiéis e anos de histórico
+de lançamentos sem ficar lento.
+
+## Se você ficar sem nenhum Administrador (ficou travado)
+Corrigimos um bug em que criar um convite para o **próprio e-mail** (ex: ao
+testar a função de convite) podia rebaixar sua própria conta sem querer no
+próximo login. Isso não deve mais acontecer (o app agora bloqueia convidar
+seu próprio e-mail, bloqueia convidar quem já tem acesso, e nunca mais
+sobrescreve um vínculo já existente).
+
+Se isso já aconteceu com você antes dessa correção, conserte manualmente:
+1. Console do Firebase → **Firestore Database** → aba **Dados**
+2. Abra `igrejas` → clique na sua igreja → subcoleção `usuarios` → ache o
+   documento com seu e-mail (o ID do documento é o seu UID) → mude o campo
+   `papel` para `admin`
+3. Ainda na raiz, abra a coleção `membrosIndice` → ache o documento cujo ID
+   começa com o ID da sua igreja e termina com o seu UID → mude o campo
+   `papel` para `admin` também
+4. Saia do app e entre de novo
+
+## Limitações desta primeira versão (dá pra evoluir depois)
+- Sem upload de comprovantes/fotos nos lançamentos (decidimos deixar de fora
+  por enquanto — mas a logo da igreja já funciona, como descrito acima)
+- Sem módulo de Campanhas (fica para uma fase 2)
+- Remover o acesso de um usuário não cancela a conta dele, só o vínculo com
+  aquela igreja
+- Não há recuperação de senha na tela (dá pra adicionar um botão "Esqueci
+  minha senha" facilmente se precisar)
+- Se um admin renomear a igreja, o nome que aparece no menu de troca de
+  igreja de **outros** usuários só atualiza da próxima vez que eles renovarem
+  o próprio vínculo (o dono da alteração já vê atualizado na hora). É um
+  detalhe cosmético, não afeta os dados financeiros.

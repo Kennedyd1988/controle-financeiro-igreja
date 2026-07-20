@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOFT+ | Financeiro de Igrejas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+  :root{
+    --ink:#eef4fb; --surface:#ffffff; --surface-2:#eef5fc; --line:#d7e4f0;
+    --text:#0f2947; --text-dim:#5c7692; --text-faint:#93a8bc;
+    --green:#16875a; --green-dim:#e2f5ec;
+    --amber:#b3790f; --amber-dim:#fbedd4;
+    --red:#c73f3f; --red-dim:#fbe7e7;
+    --brand:#0d4fc4; --brand-dim:#e6eefc;
+    --cyan:#14b8ee;
+    --radius:10px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--ink); color:var(--text);
+    font-family:'Inter',sans-serif; font-size:14px; line-height:1.5;
+    min-height:100vh;
+  }
+  ::selection{background:var(--brand-dim);}
+  .num{font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; letter-spacing:-0.2px;}
+  h1,h2,h3,.serif{font-family:'Source Serif 4',serif;}
+  a{color:var(--brand);}
+  button{font-family:inherit; cursor:pointer;}
+  input,select{font-family:inherit; font-size:13.5px;}
+
+  /* --- layout shells --- */
+  #authScreen{display:flex; min-height:100vh; align-items:center; justify-content:center; padding:24px;}
+  #appShell{display:none; min-height:100vh;}
+  #appShell.active{display:flex;}
+
+  .auth-card{
+    width:100%; max-width:380px; background:var(--surface); border:1px solid var(--line);
+    border-radius:14px; padding:32px 28px; box-shadow:0 10px 40px rgba(15,41,71,.08);
+  }
+  .auth-brand{font-family:'Source Serif 4',serif; font-weight:600; font-size:24px; margin-bottom:2px;}
+  .auth-sub{color:var(--text-dim); font-size:13px; margin-bottom:24px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12.5px; color:var(--text-dim); margin-bottom:5px;}
+  .field label .req{color:var(--red); margin-left:2px;}
+  .field input, .field select{
+    width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px;
+    background:var(--surface-2); color:var(--text);
+  }
+  .field input:focus, .field select:focus{outline:2px solid var(--brand-dim); border-color:var(--brand);}
+  .field input.input-error, .field select.input-error{border-color:var(--red); background:var(--red-dim);}
+  .abas-list{display:flex; flex-direction:column; gap:8px; margin-top:4px;}
+  .abas-list label{display:flex; align-items:center; gap:8px; font-size:13px; font-weight:400; color:var(--text);}
+  .abas-list input[type=checkbox]{width:16px; height:16px; flex-shrink:0; padding:0; accent-color:var(--brand);}
+  .abas-hint{font-size:11.5px; color:var(--text-faint); margin-top:6px;}
+  .logo-row{display:flex; align-items:center; gap:14px; margin-bottom:16px;}
+  .combo-lista{
+    display:none; position:absolute; top:100%; left:0; right:0; z-index:30;
+    background:var(--surface); border:1px solid var(--line); border-radius:8px;
+    margin-top:4px; max-height:220px; overflow-y:auto; box-shadow:0 8px 24px rgba(15,41,71,.12);
+  }
+  .combo-lista.active{display:block;}
+  .combo-item{padding:9px 12px; font-size:13px; cursor:pointer;}
+  .combo-item:hover{background:var(--surface-2);}
+  .combo-item.vazio{color:var(--text-faint); cursor:default;}
+  .logo-preview{
+    width:64px; height:64px; border-radius:10px; border:1px solid var(--line);
+    background:var(--surface-2); display:flex; align-items:center; justify-content:center;
+    object-fit:cover; font-size:11px; color:var(--text-faint); overflow:hidden;
+  }
+  .sidebar-logo{width:32px; height:32px; border-radius:8px; object-fit:cover; margin-right:8px; vertical-align:middle;}
+  .brand-row{display:flex; align-items:center; margin:0 8px 2px;}
+  .auth-actions{display:flex; flex-direction:column; gap:8px; margin-top:18px;}
+  .auth-toggle{text-align:center; font-size:12.5px; color:var(--text-dim); margin-top:16px;}
+  .auth-toggle button{background:none; border:none; color:var(--brand); font-weight:500;}
+  #authError{color:var(--red); font-size:12.5px; margin-top:10px; min-height:16px;}
+
+  /* --- topbar mobile (só aparece em telas estreitas) --- */
+  #mobileTopbar{display:none;}
+
+  /* --- sidebar --- */
+  #sidebar{
+    width:230px; flex-shrink:0; background:var(--surface);
+    border-right:1px solid var(--line); padding:20px 14px;
+    display:flex; flex-direction:column; gap:4px;
+  }
+  .brand-mark{font-family:'Source Serif 4',serif; font-weight:600; font-size:18px; margin:0 8px 2px;}
+  .brand-sub{font-size:10.5px; color:var(--text-faint); margin:0 8px 16px; text-transform:uppercase; letter-spacing:.08em;}
+  .igreja-switch{
+    margin:0 4px 18px; padding:9px 10px; background:var(--surface-2); border:1px solid var(--line);
+    border-radius:8px; font-size:12.5px; width:calc(100% - 8px);
+  }
+  .nav-btn{
+    display:flex; align-items:center; gap:10px; width:100%;
+    background:none; border:none; color:var(--text-dim);
+    padding:9px 10px; border-radius:8px; font-size:13.5px; text-align:left;
+    transition:background .12s, color .12s;
+  }
+  .nav-btn:hover{background:var(--surface-2); color:var(--text);}
+  .nav-btn.active{background:var(--brand-dim); color:var(--brand);}
+  .nav-dot{width:6px; height:6px; border-radius:50%; background:currentColor; opacity:.5; flex-shrink:0;}
+  .sidebar-foot{margin-top:auto; padding-top:14px; border-top:1px solid var(--line);}
+  .user-chip{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 8px 10px; font-size:12px; color:var(--text-dim);}
+  .user-chip-info{display:flex; flex-direction:column; gap:4px; min-width:0;}
+  .user-chip-info span:first-child{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .papel-badge{
+    display:inline-block; padding:1px 7px; border-radius:99px; font-size:10px; font-weight:600;
+    background:var(--brand-dim); color:var(--brand); text-transform:uppercase; letter-spacing:.02em;
+    white-space:nowrap; width:fit-content;
+  }
+  #btnLogout{
+    flex-shrink:0; width:30px; height:30px; border-radius:8px; border:1px solid var(--red-dim);
+    background:var(--red-dim); color:var(--red); font-size:14px; display:flex; align-items:center; justify-content:center;
+  }
+  #btnLogout:hover{background:var(--red); color:#fff;}
+
+  /* --- main --- */
+  #main{flex:1; padding:28px 36px 60px; max-width:1180px; min-width:0;}
+  .view{display:none;}
+  .view.active{display:block;}
+  .view-header{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px;}
+  .view-title{font-size:21px; font-weight:600;}
+  .view-desc{color:var(--text-dim); font-size:13px; margin-top:4px;}
+
+  /* tabelas: em vez de espremer colunas, rolam de lado no celular */
+  .table-scroll{width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .table-scroll table{min-width:560px;}
+
+  .btn{
+    background:var(--surface-2); border:1px solid var(--line); color:var(--text);
+    padding:8px 14px; border-radius:8px; font-size:13px; font-weight:500;
+    display:inline-flex; align-items:center; gap:6px;
+  }
+  .btn:hover{border-color:var(--brand);}
+  .btn-primary{background:var(--brand); border-color:var(--brand); color:#fff;}
+  .btn-primary:hover{opacity:.92;}
+  .btn-danger{background:var(--red-dim); border-color:var(--red-dim); color:var(--red);}
+  .btn-sm{padding:5px 10px; font-size:12px;}
+
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px;}
+  .grid{display:grid; gap:14px;}
+  .grid-3{grid-template-columns:repeat(3,1fr);}
+  .grid-2{grid-template-columns:repeat(2,1fr);}
+  @media(max-width:820px){.grid-3,.grid-2{grid-template-columns:1fr;}}
+
+  /* ============ RESPONSIVO: CELULAR (até 760px) ============ */
+  @media(max-width:760px){
+    body{display:block;}
+    #mobileTopbar{
+      display:flex; align-items:center; justify-content:space-between;
+      position:sticky; top:0; z-index:40; background:var(--surface);
+      border-bottom:1px solid var(--line); padding:12px 14px;
+    }
+    #mobileTopbar .brand-mark{margin:0;}
+    #btnMenuMobile{
+      background:none; border:1px solid var(--line); border-radius:8px;
+      width:38px; height:38px; display:flex; align-items:center; justify-content:center;
+      font-size:18px; color:var(--text);
+    }
+    #appShell.active{display:block;}
+    #sidebar{
+      position:fixed; top:0; left:0; height:100vh; z-index:60;
+      width:250px; max-width:82vw;
+      transform:translateX(-100%); transition:transform .2s ease;
+      box-shadow:0 0 40px rgba(15,41,71,.18);
+    }
+    #sidebar.open{transform:translateX(0);}
+    #sidebarOverlay{
+      display:none; position:fixed; inset:0; background:rgba(15,41,71,.35); z-index:55;
+    }
+    #sidebarOverlay.active{display:block;}
+    #main{padding:18px 16px 50px; max-width:100%;}
+    .view-title{font-size:19px;}
+    .toolbar{gap:8px;}
+    .toolbar select, .toolbar input{flex:1; min-width:120px;}
+    .modal{padding:18px; max-width:94vw;}
+    .stat-value{font-size:20px;}
+  }
+
+  .stat-label{font-size:12px; color:var(--text-dim); margin-bottom:6px;}
+  .stat-value{font-size:24px; font-weight:600; font-family:'IBM Plex Mono',monospace;}
+  .stat-value.green{color:var(--green);}
+  .stat-value.red{color:var(--red);}
+
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th{text-align:left; color:var(--text-dim); font-weight:500; font-size:12px; padding:8px 10px; border-bottom:1px solid var(--line);}
+  td{padding:9px 10px; border-bottom:1px solid var(--line);}
+  tr:last-child td{border-bottom:none;}
+  .tag{display:inline-block; padding:2px 8px; border-radius:99px; font-size:11.5px; font-weight:500;}
+  .tag.receita{background:var(--green-dim); color:var(--green);}
+  .tag.despesa{background:var(--red-dim); color:var(--red);}
+  .tag.locked{background:var(--amber-dim); color:var(--amber);}
+
+  .toolbar{display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap;}
+  .toolbar select, .toolbar input{padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface); font-size:13px;}
+
+  .empty{padding:40px 20px; text-align:center; color:var(--text-faint);}
+
+  /* modal */
+  .modal-backdrop{
+    display:none; position:fixed; inset:0; background:rgba(15,41,71,.4); z-index:50;
+    align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-backdrop.active{display:flex;}
+  .modal{
+    background:var(--surface); border-radius:14px; padding:24px; width:100%; max-width:460px;
+    max-height:88vh; overflow-y:auto;
+  }
+  .modal h3{font-size:17px; margin-bottom:16px;}
+  .modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:18px;}
+
+  .tabs{display:flex; gap:4px; margin-bottom:18px; border-bottom:1px solid var(--line);}
+  .tab-btn{padding:9px 14px; background:none; border:none; font-size:13px; color:var(--text-dim); border-bottom:2px solid transparent;}
+  .tab-btn.active{color:var(--brand); border-color:var(--brand); font-weight:500;}
+
+  .list-row{display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--line);}
+  .list-row:last-child{border-bottom:none;}
+
+  .toast{
+    position:fixed; bottom:20px; right:20px; background:var(--text); color:#fff; padding:11px 18px;
+    border-radius:8px; font-size:13px; z-index:100; box-shadow:0 6px 20px rgba(0,0,0,.15);
+    display:none;
+  }
+  .toast.active{display:block;}
+  .toast.error{background:var(--red);}
+</style>
+</head>
+<body>
+
+  <!-- AUTH SCREEN -->
+  <div id="authScreen">
+    <div class="auth-card">
+      <div class="auth-brand">SOFT+</div>
+      <div class="auth-sub" id="authSub">Financeiro de Igrejas — entrar</div>
+
+      <div class="field" id="fieldNome" style="display:none;">
+        <label>Seu nome<span class="req">*</span></label>
+        <input id="inputNome" type="text" placeholder="Nome completo" required>
+      </div>
+      <div class="field">
+        <label>E-mail<span class="req">*</span></label>
+        <input id="inputEmail" type="email" placeholder="voce@email.com" required>
+      </div>
+      <div class="field">
+        <label>Senha<span class="req">*</span></label>
+        <input id="inputSenha" type="password" placeholder="Mínimo 6 caracteres" required>
+      </div>
+
+      <div class="auth-actions">
+        <button class="btn btn-primary" id="btnAuthSubmit">Entrar</button>
+      </div>
+      <div id="authError"></div>
+      <div class="auth-toggle">
+        <span id="authToggleText">Ainda não tem conta?</span>
+        <button id="btnAuthToggle">Criar conta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- APP SHELL -->
+  <div id="appShell">
+    <div id="mobileTopbar">
+      <div class="brand-mark">SOFT+</div>
+      <button id="btnMenuMobile" aria-label="Abrir menu">☰</button>
+    </div>
+    <div id="sidebarOverlay"></div>
+    <nav id="sidebar">
+      <div class="brand-row">
+        <img id="sidebarLogo" class="sidebar-logo" style="display:none;">
+        <div class="brand-mark">SOFT+</div>
+      </div>
+      <div class="brand-sub">Financeiro de Igrejas</div>
+
+      <select class="igreja-switch" id="igrejaSwitch"></select>
+
+      <button class="nav-btn active" data-view="painel"><span class="nav-dot"></span>Painel</button>
+      <button class="nav-btn" data-view="lancamentos"><span class="nav-dot"></span>Lançamentos</button>
+      <button class="nav-btn" data-view="fieis"><span class="nav-dot"></span>Fiéis</button>
+      <button class="nav-btn" data-view="cadastros"><span class="nav-dot"></span>Categorias e Grupos</button>
+      <button class="nav-btn" data-view="relatorios"><span class="nav-dot"></span>Relatórios</button>
+      <button class="nav-btn" data-view="competencias"><span class="nav-dot"></span>Competências</button>
+      <button class="nav-btn" data-view="igreja"><span class="nav-dot"></span>Dados da Igreja</button>
+      <button class="nav-btn" data-view="usuarios" id="navUsuarios" style="display:none;"><span class="nav-dot"></span>Usuários</button>
+      <button class="nav-btn" data-view="importar" id="navImportar" style="display:none;"><span class="nav-dot"></span>Importar dados</button>
+      <button class="nav-btn" data-view="novaIgreja"><span class="nav-dot"></span>+ Nova Igreja</button>
+
+      <div class="sidebar-foot">
+        <div class="user-chip">
+          <div class="user-chip-info">
+            <span id="userNomeChip">—</span>
+            <span class="papel-badge" id="papelChip">—</span>
+          </div>
+          <button id="btnLogout" title="Sair" aria-label="Sair">⏻</button>
+        </div>
+      </div>
+    </nav>
+
+    <main id="main">
+
+      <!-- PAINEL -->
+      <section class="view active" id="view-painel">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Painel</div>
+            <div class="view-desc" id="painelIgrejaNome">—</div>
+          </div>
+          <div class="toolbar">
+            <select id="painelMes"></select>
+            <select id="painelAno"></select>
+          </div>
+        </div>
+        <div class="grid grid-3" style="margin-bottom:18px;">
+          <div class="card">
+            <div class="stat-label">Receitas do mês</div>
+            <div class="stat-value green num" id="statReceitas">R$ 0,00</div>
+          </div>
+          <div class="card">
+            <div class="stat-label">Despesas do mês</div>
+            <div class="stat-value red num" id="statDespesas">R$ 0,00</div>
+          </div>
+          <div class="card">
+            <div class="stat-label">Saldo do mês</div>
+            <div class="stat-value num" id="statSaldo">R$ 0,00</div>
+          </div>
+        </div>
+        <div class="grid grid-2" style="margin-bottom:18px;">
+          <div class="card">
+            <div class="stat-label">Saldo anterior (até o fim do mês passado)</div>
+            <div class="stat-value num" id="statSaldoAnterior" style="font-size:19px;">R$ 0,00</div>
+          </div>
+          <div class="card">
+            <div class="stat-label">Saldo atual (anterior + mês)</div>
+            <div class="stat-value num" id="statSaldoAtual" style="font-size:19px;">R$ 0,00</div>
+          </div>
+        </div>
+        <div class="card">
+          <div style="font-weight:600; margin-bottom:10px;">Últimos lançamentos</div>
+          <div id="painelUltimos"></div>
+        </div>
+      </section>
+
+      <!-- LANÇAMENTOS -->
+      <section class="view" id="view-lancamentos">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Lançamentos</div>
+            <div class="view-desc">Receitas e despesas da igreja</div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn" id="btnExportarLanc">Exportar</button>
+            <button class="btn btn-primary" id="btnNovoLancamento">+ Novo lançamento</button>
+          </div>
+        </div>
+        <div class="toolbar">
+          <select id="lancMes"></select>
+          <select id="lancAno"></select>
+          <select id="lancTipo">
+            <option value="">Todos os tipos</option>
+            <option value="receita">Receitas</option>
+            <option value="despesa">Despesas</option>
+          </select>
+        </div>
+        <div class="card" id="lancTotalizador" style="margin-bottom:14px; display:flex; gap:24px; flex-wrap:wrap;">
+          <div><div class="stat-label">Total de receitas</div><div class="stat-value green num" id="lancTotalReceitas" style="font-size:18px;">R$ 0,00</div></div>
+          <div><div class="stat-label">Total de despesas</div><div class="stat-value red num" id="lancTotalDespesas" style="font-size:18px;">R$ 0,00</div></div>
+          <div><div class="stat-label">Saldo do período</div><div class="stat-value num" id="lancTotalSaldo" style="font-size:18px;">R$ 0,00</div></div>
+        </div>
+        <div class="card" style="padding:0;">
+          <div class="table-scroll">
+          <table>
+            <thead><tr><th>Data</th><th>Competência</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Fiel</th><th>Valor</th><th></th></tr></thead>
+            <tbody id="lancTbody"></tbody>
+          </table>
+          </div>
+          <div class="empty" id="lancEmpty" style="display:none;">Nenhum lançamento nesse período.</div>
+          <div style="padding:14px; text-align:center;">
+            <button class="btn" id="btnLancMais" style="display:none;">Carregar mais</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- FIÉIS -->
+      <section class="view" id="view-fieis">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Fiéis</div>
+            <div class="view-desc">Cadastro de membros da igreja</div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn" id="btnExportarFieis">Exportar</button>
+            <button class="btn btn-primary" id="btnNovoFiel">+ Novo fiel</button>
+          </div>
+        </div>
+        <div class="toolbar" style="justify-content:space-between;">
+          <input type="text" id="fieisBusca" placeholder="Buscar por nome..." style="max-width:280px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span class="abas-hint" id="fieisReindexarAviso" style="display:none;"></span>
+            <button class="btn btn-sm" id="btnReindexarFieis" style="display:none;">Corrigir busca de fiéis antigos</button>
+          </div>
+        </div>
+        <div class="card" style="padding:0;">
+          <div class="table-scroll">
+          <table>
+            <thead><tr><th>Nome</th><th>Cargo</th><th>Grupo</th><th>Telefone</th><th></th></tr></thead>
+            <tbody id="fieisTbody"></tbody>
+          </table>
+          </div>
+          <div class="empty" id="fieisEmpty" style="display:none;">Nenhum fiel encontrado.</div>
+          <div style="padding:14px; text-align:center;">
+            <button class="btn" id="btnFieisMais" style="display:none;">Carregar mais</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- CADASTROS (categorias / grupos / cargos) -->
+      <section class="view" id="view-cadastros">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Categorias e Grupos</div>
+            <div class="view-desc">Tipos de receita, despesa, grupos e cargos</div>
+          </div>
+        </div>
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="categoriasReceita">Tipos de Receita</button>
+          <button class="tab-btn" data-tab="categoriasDespesa">Tipos de Despesa</button>
+          <button class="tab-btn" data-tab="grupos">Grupos</button>
+          <button class="tab-btn" data-tab="cargos">Cargos/Funções</button>
+        </div>
+        <div class="card">
+          <div class="toolbar" style="margin-bottom:14px;">
+            <input id="cadNovoNome" type="text" placeholder="Novo item...">
+            <button class="btn btn-primary btn-sm" id="btnCadAdd">Adicionar</button>
+          </div>
+          <div id="cadLista"></div>
+        </div>
+      </section>
+
+      <!-- RELATÓRIOS -->
+      <section class="view" id="view-relatorios">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Relatórios</div>
+            <div class="view-desc">Resumo por categoria e por fiel — fluxo de caixa exportável em PDF</div>
+          </div>
+          <div class="toolbar">
+            <select id="relMes"></select>
+            <select id="relAno"></select>
+            <button class="btn" id="btnPdfMensal">⬇ PDF do mês</button>
+          </div>
+        </div>
+        <div class="grid grid-2">
+          <div class="card">
+            <div style="font-weight:600; margin-bottom:10px;">Receitas por categoria</div>
+            <div id="relReceitas"></div>
+          </div>
+          <div class="card">
+            <div style="font-weight:600; margin-bottom:10px;">Despesas por categoria</div>
+            <div id="relDespesas"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px;">
+          <div class="toolbar" style="margin-bottom:12px; justify-content:space-between;">
+            <div style="font-weight:600;">Fluxo de caixa anual</div>
+            <div style="display:flex; gap:8px;">
+              <select id="relAnoAnual"></select>
+              <button class="btn" id="btnPdfAnual">⬇ PDF do ano</button>
+            </div>
+          </div>
+          <div id="relAnualTabela"></div>
+        </div>
+
+        <div class="card" style="margin-top:14px;">
+          <div class="toolbar" style="margin-bottom:12px; justify-content:space-between;">
+            <div style="font-weight:600;">Contribuições por fiel</div>
+            <button class="btn" id="btnPdfFiel">⬇ PDF do fiel</button>
+          </div>
+          <div style="position:relative; max-width:340px; margin-bottom:12px;">
+            <input type="text" id="relFielBusca" placeholder="Buscar fiel por nome..." autocomplete="off"
+              style="width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; background:var(--surface-2);">
+            <input type="hidden" id="relFiel">
+            <div class="combo-lista" id="relFielLista"></div>
+          </div>
+          <div id="relFielResultado"></div>
+        </div>
+      </section>
+
+      <!-- COMPETÊNCIAS -->
+      <section class="view" id="view-competencias">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Competências</div>
+            <div class="view-desc">Bloqueie meses já fechados para evitar edição</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="toolbar" style="margin-bottom:14px;">
+            <select id="compMes"></select>
+            <select id="compAno"></select>
+            <button class="btn btn-primary btn-sm" id="btnToggleComp">Bloquear/Desbloquear</button>
+          </div>
+          <div id="compLista"></div>
+        </div>
+      </section>
+
+      <!-- IGREJA -->
+      <section class="view" id="view-igreja">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Dados da Igreja</div>
+            <div class="view-desc">Informações cadastrais</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="logo-row">
+            <img class="logo-preview" id="igLogoPreview">
+            <div>
+              <input type="file" id="igLogoFile" accept="image/*">
+              <div class="abas-hint" style="margin-top:6px;">PNG ou JPG, será redimensionada automaticamente. <button class="btn btn-sm" id="btnRemoverLogo" type="button" style="margin-left:6px;">Remover logo</button></div>
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <div class="field"><label>Nome da igreja<span class="req">*</span></label><input id="igNome" required></div>
+            <div class="field">
+              <label>Nome para cabeçalho dos relatórios</label>
+              <input id="igNomeRelatorio" placeholder="Ex: IGREJA DE CRISTO EM TABOLEIRO GRANDE/RN">
+            </div>
+            <div class="field"><label>CNPJ</label><input id="igCnpj"></div>
+            <div class="field" style="position:relative;">
+              <label>Pastor (assinatura dos relatórios)</label>
+              <input type="text" id="igPastorBusca" placeholder="Digite para buscar um fiel..." autocomplete="off">
+              <input type="hidden" id="igPastorId">
+              <div class="combo-lista" id="igPastorLista"></div>
+            </div>
+            <div class="field" style="position:relative;">
+              <label>Tesoureiro (assinatura dos relatórios)</label>
+              <input type="text" id="igTesoureiroBusca" placeholder="Digite para buscar um fiel..." autocomplete="off">
+              <input type="hidden" id="igTesoureiroId">
+              <div class="combo-lista" id="igTesoureiroLista"></div>
+            </div>
+            <div class="field"><label>E-mail</label><input id="igEmail"></div>
+            <div class="field"><label>Instagram</label><input id="igInstagram"></div>
+            <div class="field"><label>Endereço</label><input id="igEndereco"></div>
+            <div class="field"><label>Bairro</label><input id="igBairro"></div>
+            <div class="field"><label>Cidade</label><input id="igCidade"></div>
+            <div class="field"><label>Estado</label><input id="igEstado"></div>
+            <div class="field"><label>CEP</label><input id="igCep"></div>
+          </div>
+          <button class="btn btn-primary" id="btnSalvarIgreja">Salvar alterações</button>
+        </div>
+      </section>
+
+      <!-- USUÁRIOS -->
+      <section class="view" id="view-usuarios">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Usuários</div>
+            <div class="view-desc">Quem tem acesso a esta igreja e com qual papel</div>
+          </div>
+          <button class="btn btn-primary" id="btnConvidarUsuario">+ Cadastrar usuário</button>
+        </div>
+        <div class="card" style="padding:0;">
+          <div class="table-scroll">
+          <table>
+            <thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th></th></tr></thead>
+            <tbody id="usuariosTbody"></tbody>
+          </table>
+          </div>
+        </div>
+        <div class="card" style="margin-top:14px;">
+          <div style="font-weight:600; margin-bottom:2px;">Convites pendentes</div>
+          <div class="abas-hint" style="margin-bottom:10px;">Aparece aqui quando a pessoa já tinha conta própria no app (nesse caso, o acesso libera sozinho quando ela entrar).</div>
+          <div id="convitesLista"></div>
+        </div>
+      </section>
+
+      <!-- IMPORTAR DADOS -->
+      <section class="view" id="view-importar">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Importar dados</div>
+            <div class="view-desc">Migrar a planilha antiga do AppSheet para esta igreja</div>
+          </div>
+        </div>
+        <div class="card" style="max-width:560px;">
+          <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:14px;">
+            Selecione o arquivo .xlsx exportado do AppSheet (mesmo formato de abas:
+            cad_fieis, cad_grupo, cad_carg_func, cad_receitas, cad_despesas, cad_igreja,
+            lanc_receita, lanc_despesa, bloq_competencia). Os dados serão adicionados à
+            igreja selecionada no momento — <strong id="importIgrejaNome"></strong>.
+            Comprovantes/fotos anexados na planilha antiga não são importados.
+          </p>
+          <button class="btn" id="btnBaixarModelo" style="margin-bottom:16px;">⬇ Baixar modelo de planilha</button>
+          <div class="field"><label>Arquivo da planilha (.xlsx)</label><input type="file" id="importArquivo" accept=".xlsx"></div>
+          <button class="btn btn-primary" id="btnImportar">Iniciar importação</button>
+          <div style="margin-top:16px;">
+            <pre id="importLog" style="background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:12px; font-size:12px; max-height:280px; overflow-y:auto; white-space:pre-wrap; font-family:'IBM Plex Mono',monospace;"></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- NOVA IGREJA -->
+      <section class="view" id="view-novaIgreja">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Cadastrar nova igreja</div>
+            <div class="view-desc">Você se torna administrador dela automaticamente</div>
+          </div>
+        </div>
+        <div class="card" style="max-width:420px;">
+          <div class="field"><label>Nome da igreja<span class="req">*</span></label><input id="novaIgrejaNome" placeholder="Ex: Igreja de Cristo em..." required></div>
+          <button class="btn btn-primary" id="btnCriarIgreja">Criar igreja</button>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- MODAL: novo/editar lançamento -->
+  <div class="modal-backdrop" id="modalLancamento">
+    <div class="modal">
+      <h3 id="modalLancTitulo">Novo lançamento</h3>
+      <div class="field">
+        <label>Tipo</label>
+        <select id="lFormTipo">
+          <option value="receita">Receita</option>
+          <option value="despesa">Despesa</option>
+        </select>
+      </div>
+      <div class="field"><label>Data<span class="req">*</span></label><input type="date" id="lFormData" required></div>
+      <div class="field">
+        <label>Competência (mês de referência)<span class="req">*</span></label>
+        <div style="display:flex; gap:8px;">
+          <select id="lFormCompMes" style="flex:1;" required></select>
+          <select id="lFormCompAno" style="flex:1;" required></select>
+        </div>
+        <div class="abas-hint">Use quando o pagamento foi feito num mês, mas se refere a outro (ex: pago em julho, referente a junho).</div>
+      </div>
+      <div class="field"><label>Categoria<span class="req">*</span></label><select id="lFormCategoria" required></select></div>
+      <div class="field" id="lFormFielWrap" style="position:relative;">
+        <label>Fiel (opcional)</label>
+        <input type="text" id="lFormFielBusca" placeholder="Digite para buscar..." autocomplete="off">
+        <input type="hidden" id="lFormFiel">
+        <div class="combo-lista" id="lFormFielLista"></div>
+      </div>
+      <div class="field"><label>Descrição / detalhamento</label><input id="lFormDescricao" placeholder="Opcional"></div>
+      <div class="field"><label>Valor (R$)<span class="req">*</span></label><input type="number" step="0.01" id="lFormValor" placeholder="0,00" required></div>
+      <div class="modal-actions">
+        <button class="btn" id="btnCancelarLanc">Cancelar</button>
+        <button class="btn btn-primary" id="btnSalvarLanc">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: novo/editar fiel -->
+  <div class="modal-backdrop" id="modalFiel">
+    <div class="modal">
+      <h3 id="modalFielTitulo">Novo fiel</h3>
+      <div class="field"><label>Nome<span class="req">*</span></label><input id="fFormNome" required></div>
+      <div class="field"><label>Cargo/Função</label><select id="fFormCargo"></select></div>
+      <div class="field"><label>Grupo</label><select id="fFormGrupo"></select></div>
+      <div class="field"><label>Telefone</label><input id="fFormTelefone"></div>
+      <div class="field"><label>E-mail</label><input id="fFormEmail"></div>
+      <div class="field"><label>CPF</label><input id="fFormCpf"></div>
+      <div class="field"><label>Observações</label><input id="fFormObs"></div>
+      <div class="modal-actions">
+        <button class="btn" id="btnCancelarFiel">Cancelar</button>
+        <button class="btn btn-primary" id="btnSalvarFiel">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: convidar usuário -->
+  <div class="modal-backdrop" id="modalConvite">
+    <div class="modal">
+      <h3>Cadastrar usuário</h3>
+      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:14px;">
+        Você cria a conta da pessoa agora mesmo, com uma senha temporária. Depois, é só
+        passar o e-mail e a senha pra ela (WhatsApp, papel, o que for) — ela já entra
+        direto, sem precisar de nenhum e-mail de confirmação.
+      </p>
+      <div class="field"><label>Nome da pessoa<span class="req">*</span></label><input type="text" id="convFormNome" required></div>
+      <div class="field"><label>E-mail da pessoa<span class="req">*</span></label><input type="email" id="convFormEmail" required></div>
+      <div class="field">
+        <label>Senha temporária<span class="req">*</span></label>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="convFormSenha" placeholder="Mínimo 6 caracteres" required style="flex:1;">
+          <button class="btn btn-sm" id="btnGerarSenha" type="button">Gerar</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Papel</label>
+        <select id="convFormPapel">
+          <option value="leitura">Leitura</option>
+          <option value="cadastrador">Cadastrador</option>
+          <option value="admin">Administrador</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Abas que essa pessoa pode acessar</label>
+        <div class="abas-list" id="convFormAbas"></div>
+        <div class="abas-hint">Painel e Dados da Igreja (visualização) ficam sempre visíveis. Usuários e Importar dados são exclusivos de Administradores. "Relatórios" mostra dados de "Lançamentos" — libere os dois juntos.</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="btnCancelarConvite">Cancelar</button>
+        <button class="btn btn-primary" id="btnSalvarConvite">Cadastrar</button>
+      </div>
+      <div id="convResultado" style="display:none; margin-top:16px; padding:12px; background:var(--green-dim); border-radius:8px; font-size:13px;"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: editar permissões de usuário existente -->
+  <div class="modal-backdrop" id="modalEditarUsuario">
+    <div class="modal">
+      <h3>Editar permissões</h3>
+      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:14px;" id="editUsuarioNome"></p>
+      <p class="abas-hint" id="editAvisoSelf" style="display:none; color:var(--amber); margin-bottom:12px;">
+        Você está editando sua própria conta — não é possível remover seu próprio acesso de Administrador (para evitar ficar sem ninguém com acesso total à igreja).
+      </p>
+      <div class="field">
+        <label>Papel</label>
+        <select id="editFormPapel">
+          <option value="leitura">Leitura</option>
+          <option value="cadastrador">Cadastrador</option>
+          <option value="admin">Administrador</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Abas que essa pessoa pode acessar</label>
+        <div class="abas-list" id="editFormAbas"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="btnCancelarEditarUsuario">Cancelar</button>
+        <button class="btn btn-primary" id="btnSalvarEditarUsuario">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
