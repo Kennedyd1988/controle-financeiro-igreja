@@ -141,6 +141,54 @@ Cada lançamento agora tem dois campos de tempo separados:
 Por padrão, a competência acompanha a data escolhida — mas dá pra mudar
 manualmente, por exemplo quando um dízimo de junho é pago só em julho.
 
+## Lote de ajustes (ordenação, bloqueio, senha, exclusão)
+
+**Ordenação e alinhamento**
+- Relatório mensal: lançamentos de receita (dízimos e ofertas) em ordem
+  alfabética pelo nome do fiel; despesas continuam por data
+- Valores monetários alinhados à direita em todos os relatórios em PDF e
+  também nas telas do app (tabelas, painel, listas)
+
+**Bloqueio de competência — bug corrigido**
+Antes, bloquear um mês só impedia *criar* lançamento novo — editar ou
+excluir um lançamento já existente continuava funcionando normalmente
+mesmo com o mês bloqueado (e a regra de segurança do Firestore checava um
+campo que nunca era preenchido de verdade). Corrigido dos dois lados
+(app e regras): agora editar e excluir também são bloqueados enquanto a
+competência estiver fechada — inclusive tentando mover um lançamento para
+dentro de um mês bloqueado.
+⚠️ Assim como o "saldo anterior", isso depende do campo `competenciaKey`
+em cada lançamento — use o botão "Corrigir lançamentos antigos" (tela
+Competências) se ainda não tiver rodado essa correção.
+
+**Relatório por fiel — filtro por período**
+Agora tem campos "De" / "Até" (datas), consolidando o período inteiro
+mesmo que passe de um ano — independente do mês selecionado nos outros
+cartões da tela. Deixando em branco, mostra o histórico completo.
+
+**Login e senhas**
+- "Criar conta" foi removida da tela de login — cadastro agora é sempre
+  feito pelo administrador (Usuários → Cadastrar usuário). Se um dia
+  precisar criar a primeiríssima conta de uma instalação nova do zero,
+  abra `index.html?primeiraconta=1` pra reativar temporariamente essa opção.
+- Ao cadastrar um usuário novo, dá pra marcar **"Pedir para a pessoa
+  trocar a senha no primeiro acesso"** — na primeira vez que ela entrar,
+  o app pede pra ela escolher uma senha nova antes de liberar qualquer tela.
+- Em "Editar usuário": agora dá pra editar o nome, marcar/desmarcar a
+  troca de senha obrigatória, e (pra contas que já existem) enviar um
+  e-mail de redefinição de senha pela própria pessoa escolher uma nova.
+  Não é possível definir a senha de outra pessoa diretamente por aqui —
+  é uma limitação real do Firebase sem um servidor próprio por trás; o
+  e-mail de redefinição é o caminho seguro que existe sem precisar disso.
+
+**Proteção contra exclusão indevida**
+Não deixa mais excluir: um **fiel** vinculado a algum lançamento, uma
+**categoria** de receita/despesa usada em algum lançamento, ou um
+**grupo/cargo** vinculado a algum fiel. Aparece um aviso explicando o
+motivo em vez de excluir e deixar dado "orfão" no sistema. (Essa proteção
+é feita pelo app — é proteção de integridade dos dados, não uma regra de
+segurança do Firestore, que não consegue fazer esse tipo de verificação.)
+
 ## Correção: saldo anterior inconsistente com a Competência
 Havia um bug real: "Saldo anterior" era calculado pela **Data** do
 lançamento, enquanto o resto do app (totais do mês, relatórios) usa a
