@@ -2,7 +2,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, signOut
+  createUserWithEmailAndPassword, signOut, sendPasswordResetEmail, updatePassword
 } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
@@ -54,6 +54,8 @@ const state = {
   lancPagina: [],
   lancCursor: null,
   lancTemMais: false,
+  competenciasBloqueadas: new Set(),
+  editandoLancCompetenciaOriginal: null,
 };
 
 // ---------- helpers ----------
@@ -73,6 +75,10 @@ function podeEditar(){ return ['admin','cadastrador'].includes(papelAtual()); }
 function podeEditarAba(aba){ return temAcesso(aba) && podeEditar(); }
 function isAdmin(){ return papelAtual() === 'admin'; }
 function competenciaKey(ano, mes){ return `${ano}-${String(mes).padStart(2,'0')}`; }
+async function carregarCompetenciasBloqueadas(){
+  const snaps = await getDocs(query(collection(db,'igrejas',state.igrejaAtualId,'competencias'), where('bloqueado','==',true)));
+  state.competenciasBloqueadas = new Set(snaps.docs.map(d=>d.id));
+}
 
 // Validação simples de campos obrigatórios: destaca em vermelho e avisa.
 function validarObrigatorios(campos){
@@ -177,6 +183,14 @@ function populaMesAno(selMesId, selAnoId){
 
 // ---------- AUTH ----------
 let modoCadastro = false;
+// "Criar conta" fica escondida da tela normal — o cadastro de usuários
+// agora é feito pelo admin (Usuários → Cadastrar usuário). Esse link só
+// aparece se a página for aberta com ?primeiraconta=1 na URL, para o caso
+// raro de precisar criar a toda primeira conta de uma instalação nova do
+// zero (quando ainda não existe nenhum admin em lugar nenhum).
+if(new URLSearchParams(window.location.search).get('primeiraconta') === '1'){
+  $('authToggleWrap').style.display = 'flex';
+}
 $('btnAuthToggle').addEventListener('click', ()=>{
   modoCadastro = !modoCadastro;
   $('fieldNome').style.display = modoCadastro ? 'block' : 'none';
@@ -213,6 +227,8 @@ function traduzErroAuth(code){
     'auth/invalid-credential': 'E-mail ou senha incorretos.',
     'auth/email-already-in-use': 'Este e-mail já tem uma conta. Tente entrar.',
     'auth/weak-password': 'A senha precisa ter pelo menos 6 caracteres.',
+    'auth/requires-recent-login': 'Por segurança, saia e entre de novo antes de trocar a senha.',
+    'auth/too-many-requests': 'Muitas tentativas. Espere um pouco e tente de novo.',
   };
   return map[code] || 'Ocorreu um erro. Tente novamente.';
 }
@@ -285,7 +301,7 @@ async function carregarIgrejasDoUsuario(user){
   const snaps = await getDocs(q);
   state.igrejas = snaps.docs.map(d => {
     const dado = d.data();
-    return { id: dado.igrejaId, nome: dado.igrejaNome, papel: dado.papel, abas: dado.abas || TODAS_ABAS };
+    return { id: dado.igrejaId, nome: dado.igrejaNome, papel: dado.papel, abas: dado.abas || TODAS_ABAS, precisaTrocarSenha: !!dado.precisaTrocarSenha };
   });
   const sel = $('igrejaSwitch');
   if(state.igrejas.length === 0){
@@ -299,6 +315,7 @@ async function carregarIgrejasDoUsuario(user){
   }
   sel.value = state.igrejaAtualId;
   await onIgrejaChange();
+  if(state.igrejas.some(i => i.precisaTrocarSenha)) abrirModalTrocarSenhaObrigatoria();
 }
 
 $('igrejaSwitch').addEventListener('change', async (e)=>{
@@ -319,6 +336,7 @@ async function onIgrejaChange(){
   state.fieisPagina = []; state.fieisCursor = null; state.fieisTemMais = false; state.fieisBuscaAtual = '';
   if($('fieisBusca')) $('fieisBusca').value = '';
   await carregarDadosDaIgreja();
+  await carregarCompetenciasBloqueadas();
   aplicarLogoSidebar();
   // se a aba atualmente aberta não é mais acessível, volta pro painel
   const ativo = document.querySelector('.nav-btn.active');
@@ -358,8 +376,45 @@ function aplicarLogoSidebar(){
   else { img.style.display = 'none'; }
 }
 
+function abrirModalTrocarSenhaObrigatoria(){
+  $('novaSenhaObrigatoria').value = '';
+  $('novaSenhaObrigatoriaConfirmar').value = '';
+  $('modalTrocarSenha').classList.add('active');
+}
+$('btnSalvarNovaSenhaObrigatoria').addEventListener('click', async ()=>{
+  const senha = $('novaSenhaObrigatoria').value;
+  const confirmacao = $('novaSenhaObrigatoriaConfirmar').value;
+  if(senha.length < 6){ toast('A senha precisa ter pelo menos 6 caracteres.', true); return; }
+  if(senha !== confirmacao){ toast('As senhas não são iguais.', true); return; }
+  const btn = $('btnSalvarNovaSenhaObrigatoria');
+  btn.disabled = true;
+  try{
+    await updatePassword(auth.currentUser, senha);
+    // Limpa a marcação em todas as igrejas onde a pessoa está.
+    await Promise.all(state.igrejas.map(async (ig) => {
+      try{
+        await updateDoc(doc(db,'igrejas', ig.id, 'usuarios', state.user.uid), { precisaTrocarSenha: false });
+        await updateDoc(doc(db,'membrosIndice', `${ig.id}_${state.user.uid}`), { precisaTrocarSenha: false });
+      } catch(e){ /* segue mesmo se uma igreja falhar */ }
+    }));
+    state.igrejas.forEach(ig => ig.precisaTrocarSenha = false);
+    $('modalTrocarSenha').classList.remove('active');
+    toast('Senha atualizada com sucesso!');
+  } catch(e){
+    toast('Erro ao trocar senha: ' + traduzErroAuth(e.code||''), true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 configurarComboboxFiel('lFormFielBusca', 'lFormFiel', 'lFormFielLista');
 configurarComboboxFiel('relFielBusca', 'relFiel', 'relFielLista', ()=> renderRelatorioFiel());
+$('relFielDataInicio').addEventListener('change', renderRelatorioFiel);
+$('relFielDataFim').addEventListener('change', renderRelatorioFiel);
+$('btnLimparPeriodoFiel').addEventListener('click', ()=>{
+  $('relFielDataInicio').value = ''; $('relFielDataFim').value = '';
+  renderRelatorioFiel();
+});
 configurarComboboxFiel('igPastorBusca', 'igPastorId', 'igPastorLista');
 configurarComboboxFiel('igTesoureiroBusca', 'igTesoureiroId', 'igTesoureiroLista');
 
@@ -604,13 +659,18 @@ async function atualizarTotalizadorLancamentos(){
   saldoEl.className = 'stat-value num ' + (receitas-despesas >= 0 ? 'green' : 'red');
 }
 
+function isCompetenciaBloqueada(mes, ano){
+  return state.competenciasBloqueadas.has(competenciaKey(ano, mes));
+}
 function desenharTabelaLancamentos(){
   const lancs = state.lancPagina;
   const editavel = podeEditarAba('lancamentos');
   $('btnNovoLancamento').style.display = editavel ? 'inline-flex' : 'none';
   $('lancEmpty').style.display = lancs.length ? 'none' : 'block';
   $('btnLancMais').style.display = state.lancTemMais ? 'inline-flex' : 'none';
-  $('lancTbody').innerHTML = lancs.map(l => `
+  $('lancTbody').innerHTML = lancs.map(l => {
+    const bloqueado = isCompetenciaBloqueada(l.mes, l.ano);
+    return `
     <tr>
       <td>${l.dataStr ? formatarDataBR(l.dataStr) : '—'}</td>
       <td>${l.mes ? `${MESES[l.mes-1]}/${l.ano}` : '—'}</td>
@@ -620,17 +680,22 @@ function desenharTabelaLancamentos(){
       <td>${l.membroNome||'—'}</td>
       <td class="num">${fmtBRL(l.valor)}</td>
       <td>
-        ${l.bloqueado ? '<span class="tag locked">bloqueado</span>' :
+        ${bloqueado ? '<span class="tag locked">bloqueado</span>' :
           (editavel ? `<button class="btn btn-sm" data-edit="${l.id}">Editar</button>
            <button class="btn btn-sm btn-danger" data-del="${l.id}">Excluir</button>` : '')}
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   $('lancTbody').querySelectorAll('[data-edit]').forEach(b=>{
     b.addEventListener('click', ()=> abrirModalLancamento(lancs.find(l=>l.id===b.dataset.edit)));
   });
   $('lancTbody').querySelectorAll('[data-del]').forEach(b=>{
     b.addEventListener('click', async ()=>{
+      const lanc = lancs.find(l=>l.id===b.dataset.del);
+      if(lanc && isCompetenciaBloqueada(lanc.mes, lanc.ano)){
+        toast('Esta competência está bloqueada. Desbloqueie em Competências para excluir.', true); return;
+      }
       if(!confirm('Excluir este lançamento?')) return;
       await deleteDoc(doc(db,'igrejas',state.igrejaAtualId,'lancamentos', b.dataset.del));
       toast('Lançamento excluído.');
@@ -643,6 +708,7 @@ function formatarDataBR(iso){ const [y,m,d] = iso.split('-'); return `${d}/${m}/
 $('btnNovoLancamento').addEventListener('click', ()=> abrirModalLancamento(null));
 function abrirModalLancamento(lanc){
   state.editandoLancId = lanc ? lanc.id : null;
+  state.editandoLancCompetenciaOriginal = lanc ? competenciaKey(lanc.ano, lanc.mes) : null;
   $('modalLancTitulo').textContent = lanc ? 'Editar lançamento' : 'Novo lançamento';
   $('lFormTipo').value = lanc ? lanc.tipo : 'receita';
   $('lFormData').value = lanc ? lanc.dataStr : new Date().toISOString().slice(0,10);
@@ -692,9 +758,14 @@ $('btnSalvarLanc').addEventListener('click', async ()=>{
   if(isNaN(valor) || valor <= 0){ $('lFormValor').classList.add('input-error'); toast('Informe um valor válido.', true); return; }
   const mes = parseInt($('lFormCompMes').value), ano = parseInt($('lFormCompAno').value);
   const key = competenciaKey(ano, mes);
-  const compSnap = await getDoc(doc(db,'igrejas',state.igrejaAtualId,'competencias', key));
-  if(compSnap.exists() && compSnap.data().bloqueado && !state.editandoLancId){
+  if(isCompetenciaBloqueada(mes, ano)){
     toast('Esta competência está bloqueada.', true); return;
+  }
+  if(state.editandoLancCompetenciaOriginal && state.editandoLancCompetenciaOriginal !== key){
+    const [anoOrig, mesOrig] = state.editandoLancCompetenciaOriginal.split('-').map(Number);
+    if(isCompetenciaBloqueada(mesOrig, anoOrig)){
+      toast('Esse lançamento pertence a uma competência bloqueada — desbloqueie antes de editar.', true); return;
+    }
   }
   const lista = tipo === 'receita' ? state.categoriasReceita : state.categoriasDespesa;
   const categoriaNome = lista.find(c=>c.id===categoriaId)?.nome || '';
@@ -797,12 +868,21 @@ function desenharTabelaFieis(){
   });
   $('fieisTbody').querySelectorAll('[data-del]').forEach(b=>{
     b.addEventListener('click', async ()=>{
+      const vinculado = await existeVinculo('lancamentos', 'membroId', b.dataset.del);
+      if(vinculado){ toast('Não é possível excluir: esse fiel está vinculado a um ou mais lançamentos.', true); return; }
       if(!confirm('Excluir este fiel?')) return;
       await deleteDoc(doc(db,'igrejas',state.igrejaAtualId,'membros', b.dataset.del));
       await buscarFieisPagina(true);
       toast('Fiel removido.'); desenharTabelaFieis();
     });
   });
+}
+// Verifica se existe algum documento em `colecao` com `campo` == `valor` —
+// usado para impedir excluir um registro que está em uso em outro lugar.
+async function existeVinculo(colecao, campo, valor){
+  const q = query(collection(db,'igrejas',state.igrejaAtualId, colecao), where(campo,'==',valor), limit(1));
+  const snap = await getDocs(q);
+  return !snap.empty;
 }
 function cargoNome(id){ return state.cargos.find(c=>c.id===id)?.nome || '—'; }
 function grupoNome(id){ return state.grupos.find(g=>g.id===id)?.nome || '—'; }
@@ -865,6 +945,17 @@ function renderCadastros(){
     </div>`).join('') : `<div class="empty">Nenhum item cadastrado.</div>`;
   $('cadLista').querySelectorAll('[data-del]').forEach(b=>{
     b.addEventListener('click', async ()=>{
+      const checagens = {
+        categoriasReceita: ['lancamentos','categoriaId','está usado em algum lançamento'],
+        categoriasDespesa: ['lancamentos','categoriaId','está usado em algum lançamento'],
+        grupos: ['membros','grupoId','está vinculado a algum fiel'],
+        cargos: ['membros','cargoId','está vinculado a algum fiel'],
+      };
+      const [colecao, campo, msg] = checagens[state.cadTab] || [];
+      if(colecao && await existeVinculo(colecao, campo, b.dataset.del)){
+        toast(`Não é possível excluir: esse item ${msg}.`, true); return;
+      }
+      if(!confirm('Excluir este item?')) return;
       await deleteDoc(doc(db,'igrejas',state.igrejaAtualId, state.cadTab, b.dataset.del));
       await carregarDadosDaIgreja();
       toast('Item removido.'); renderCadastros();
@@ -964,21 +1055,36 @@ async function renderRelatorioAnual(){
   }).join('');
   $('relAnualTabela').innerHTML = `
     <div class="table-scroll"><table>
-      <thead><tr><th>Mês</th><th>Saldo Anterior</th><th>Receitas</th><th>Despesas</th><th>Saldo do Mês</th></tr></thead>
+      <thead><tr><th>Mês</th><th style="text-align:right;">Saldo Anterior</th><th style="text-align:right;">Receitas</th><th style="text-align:right;">Despesas</th><th style="text-align:right;">Saldo do Mês</th></tr></thead>
       <tbody>${linhas}</tbody>
       <tfoot><tr style="font-weight:600;"><td colspan="2">Total do ano</td><td class="num">${fmtBRL(totalReceitas)}</td><td class="num">${fmtBRL(totalDespesas)}</td><td class="num">${fmtBRL(totalReceitas-totalDespesas)}</td></tr></tfoot>
     </table></div>`;
 }
+// Busca todos os lançamentos de um fiel, opcionalmente filtrando por um
+// período de datas (independe do mês selecionado nos outros cartões —
+// pode consolidar vários anos de uma vez).
+async function buscarLancamentosDoFiel(fielId){
+  const q = query(collection(db,'igrejas',state.igrejaAtualId,'lancamentos'), where('membroId','==',fielId));
+  const snaps = await getDocs(q);
+  return snaps.docs.map(d=>({id:d.id, ...d.data()}));
+}
+function filtrarPorPeriodo(lancs, inicio, fim){
+  let r = lancs;
+  if(inicio) r = r.filter(l => (l.dataStr||'') >= inicio);
+  if(fim) r = r.filter(l => (l.dataStr||'') <= fim);
+  return r.sort((a,b)=> (a.dataStr||'').localeCompare(b.dataStr||''));
+}
 async function renderRelatorioFiel(){
   const fielId = $('relFiel').value;
   if(!fielId){ $('relFielResultado').innerHTML = ''; return; }
-  const mes = parseInt($('relMes').value), ano = parseInt($('relAno').value);
-  const lancs = (await buscarLancamentos(mes, ano)).filter(l=>l.membroId===fielId);
+  const inicio = $('relFielDataInicio').value, fim = $('relFielDataFim').value;
+  const lancs = filtrarPorPeriodo(await buscarLancamentosDoFiel(fielId), inicio, fim);
   const total = lancs.reduce((s,l)=>s+l.valor,0);
+  const rotuloPeriodo = (inicio || fim) ? 'Total no período' : 'Total geral';
   $('relFielResultado').innerHTML = `
-    <div class="list-row"><strong>Total no mês</strong><strong class="num">${fmtBRL(total)}</strong></div>
+    <div class="list-row"><strong>${rotuloPeriodo}</strong><strong class="num">${fmtBRL(total)}</strong></div>
     ${lancs.map(l=>`<div class="list-row"><span>${formatarDataBR(l.dataStr)} · ${l.categoriaNome}</span><span class="num">${fmtBRL(l.valor)}</span></div>`).join('')}
-    ${!lancs.length ? '<div class="empty">Nenhuma contribuição neste mês.</div>' : ''}
+    ${!lancs.length ? '<div class="empty">Nenhuma contribuição nesse período.</div>' : ''}
   `;
 }
 
@@ -1042,6 +1148,7 @@ $('btnToggleComp').addEventListener('click', async ()=>{
     bloqueadoPor: state.user.uid, bloqueadoEm: serverTimestamp()
   });
   toast(!bloqueadoAtual ? 'Competência bloqueada.' : 'Competência desbloqueada.');
+  await carregarCompetenciasBloqueadas();
   renderCompetencias();
 });
 
@@ -1181,6 +1288,7 @@ function gerarSenhaAleatoria(){
 $('btnConvidarUsuario').addEventListener('click', ()=>{
   $('convFormNome').value = ''; $('convFormEmail').value=''; $('convFormPapel').value='leitura';
   $('convFormSenha').value = gerarSenhaAleatoria();
+  $('convFormTrocarSenha').checked = true;
   $('convFormNome').classList.remove('input-error');
   $('convFormEmail').classList.remove('input-error');
   $('convFormSenha').classList.remove('input-error');
@@ -1194,18 +1302,18 @@ $('btnCancelarConvite').addEventListener('click', ()=> $('modalConvite').classLi
 // Cria a conta da pessoa direto (usando uma instância separada e temporária
 // do Firebase, só para não derrubar a sessão do admin que está logado) e já
 // libera o acesso na hora — sem depender de e-mail nenhum.
-async function criarUsuarioDireto(nome, email, senha, papel, abas){
+async function criarUsuarioDireto(nome, email, senha, papel, abas, precisaTrocarSenha){
   const appTemp = initializeApp(firebaseConfig, `criar-usuario-${Date.now()}`);
   const authTemp = getAuth(appTemp);
   try{
     const cred = await createUserWithEmailAndPassword(authTemp, email, senha);
     const novoUid = cred.user.uid;
     await setDoc(doc(db,'igrejas',state.igrejaAtualId,'usuarios', novoUid), {
-      uid: novoUid, nome, email, papel, abasPermitidas: abas, criadoEm: serverTimestamp()
+      uid: novoUid, nome, email, papel, abasPermitidas: abas, precisaTrocarSenha: !!precisaTrocarSenha, criadoEm: serverTimestamp()
     });
     await setDoc(doc(db,'membrosIndice', `${state.igrejaAtualId}_${novoUid}`), {
       uid: novoUid, igrejaId: state.igrejaAtualId, igrejaNome: igrejaAtual()?.nome || '',
-      papel, abas, nome, email
+      papel, abas, nome, email, precisaTrocarSenha: !!precisaTrocarSenha
     });
     return { ok:true };
   } finally {
@@ -1223,6 +1331,7 @@ $('btnSalvarConvite').addEventListener('click', async ()=>{
   const senha = $('convFormSenha').value;
   const papel = $('convFormPapel').value;
   const abas = lerAbasCheckboxes('convFormAbas');
+  const precisaTrocarSenha = $('convFormTrocarSenha').checked;
   if(email === state.user.email.toLowerCase()){
     toast('Você já tem acesso — não é possível cadastrar seu próprio e-mail de novo.', true); return;
   }
@@ -1237,7 +1346,7 @@ $('btnSalvarConvite').addEventListener('click', async ()=>{
   const btn = $('btnSalvarConvite');
   btn.disabled = true;
   try{
-    await criarUsuarioDireto(nome, email, senha, papel, abas);
+    await criarUsuarioDireto(nome, email, senha, papel, abas, precisaTrocarSenha);
     $('convResultado').style.display = 'block';
     $('convResultado').innerHTML = `
       <strong>Conta criada!</strong> Passe esses dados para ${nome}:<br>
@@ -1273,8 +1382,11 @@ $('btnSalvarConvite').addEventListener('click', async ()=>{
 
 function abrirModalEditarUsuario(u){
   state.editandoUsuarioUid = u.id;
-  $('editUsuarioNome').textContent = `${u.nome} — ${u.email}`;
+  state.editandoUsuarioEmail = u.email;
+  $('editUsuarioEmail').textContent = u.email;
+  $('editFormNome').value = u.nome || '';
   $('editFormPapel').value = u.papel;
+  $('editFormTrocarSenha').checked = !!u.precisaTrocarSenha;
   renderAbasCheckboxes('editFormAbas', u.abasPermitidas || TODAS_ABAS);
   const souEu = u.id === state.user.uid;
   $('editFormPapel').disabled = souEu;
@@ -1283,17 +1395,28 @@ function abrirModalEditarUsuario(u){
 }
 $('btnCancelarEditarUsuario').addEventListener('click', ()=> $('modalEditarUsuario').classList.remove('active'));
 $('btnSalvarEditarUsuario').addEventListener('click', async ()=>{
+  if(!validarObrigatorios([{id:'editFormNome', nome:'Nome'}])) return;
   const uid = state.editandoUsuarioUid;
   const souEu = uid === state.user.uid;
+  const nome = $('editFormNome').value.trim();
   const papel = souEu ? 'admin' : $('editFormPapel').value;
   const abas = lerAbasCheckboxes('editFormAbas');
+  const precisaTrocarSenha = $('editFormTrocarSenha').checked;
   try{
-    await updateDoc(doc(db,'igrejas',state.igrejaAtualId,'usuarios', uid), { papel, abasPermitidas: abas });
-    await updateDoc(doc(db,'membrosIndice', `${state.igrejaAtualId}_${uid}`), { papel, abas });
+    await updateDoc(doc(db,'igrejas',state.igrejaAtualId,'usuarios', uid), { nome, papel, abasPermitidas: abas, precisaTrocarSenha });
+    await updateDoc(doc(db,'membrosIndice', `${state.igrejaAtualId}_${uid}`), { nome, papel, abas, precisaTrocarSenha });
     $('modalEditarUsuario').classList.remove('active');
-    toast('Permissões atualizadas!');
+    toast('Usuário atualizado!');
     renderUsuarios();
   } catch(e){ toast('Erro ao salvar: '+e.message, true); }
+});
+$('btnResetSenhaUsuario').addEventListener('click', async ()=>{
+  const email = state.editandoUsuarioEmail;
+  if(!confirm(`Enviar e-mail de redefinição de senha para ${email}?`)) return;
+  try{
+    await sendPasswordResetEmail(auth, email);
+    toast('E-mail de redefinição enviado!');
+  } catch(e){ toast('Erro ao enviar: ' + traduzErroAuth(e.code||''), true); }
 });
 
 // ---------- EXPORTAR (XLSX) ----------
@@ -1317,7 +1440,7 @@ $('btnExportarLanc').addEventListener('click', async ()=>{
     Descrição: l.descricao || '',
     Fiel: l.membroNome || '',
     Valor: l.valor,
-    Bloqueado: l.bloqueado ? 'Sim' : 'Não'
+    Bloqueado: isCompetenciaBloqueada(l.mes, l.ano) ? 'Sim' : 'Não'
   }));
   const ws = XLSX.utils.json_to_sheet(linhas);
   const wb = XLSX.utils.book_new();
@@ -1756,7 +1879,14 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
   try{
     const mes = parseInt($('relMes').value), ano = parseInt($('relAno').value);
     const lancs = await buscarLancamentos(mes, ano);
-    const receitas = lancs.filter(l=>l.tipo==='receita').sort((a,b)=>(a.dataStr||'').localeCompare(b.dataStr||''));
+    const ordenarPorFiel = (lista) => [...lista].sort((a,b) => {
+      const na = (a.membroNome||'').trim(), nb = (b.membroNome||'').trim();
+      if(!na && !nb) return 0;
+      if(!na) return 1;
+      if(!nb) return -1;
+      return na.localeCompare(nb, 'pt-BR');
+    });
+    const receitas = ordenarPorFiel(lancs.filter(l=>l.tipo==='receita'));
     const despesas = lancs.filter(l=>l.tipo==='despesa').sort((a,b)=>(a.dataStr||'').localeCompare(b.dataStr||''));
     const dizimos = receitas.filter(l => ehDizimo(l.categoriaNome));
     const ofertas = receitas.filter(l => !ehDizimo(l.categoriaNome));
@@ -1771,7 +1901,7 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
     const pdf = new jsPDF();
     const tituloPeriodo = `RELATÓRIO DO MÊS DE ${MESES[mes-1].toUpperCase()} DE ${ano}`;
 
-    // ---- PÁGINA 1: dizimistas + ofertas ----
+    // ---- PÁGINA 1: dizimistas + ofertas (por ordem alfabética do fiel) ----
     let y = cabecalhoRelatorioPdf(pdf, tituloPeriodo);
     y = faixaTitulo(pdf, y, 'RELAÇÃO DE DIZIMISTAS E SEUS VALORES');
 
@@ -1779,7 +1909,7 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
     if(linhasDizimos.length){
       const metade = Math.ceil(linhasDizimos.length/2);
       const colEsq = linhasDizimos.slice(0, metade), colDir = linhasDizimos.slice(metade);
-      const opcoes = { head:[['N°','Nome','Data','Valor']], theme:'grid', styles:{fontSize:6.5, cellPadding:1}, headStyles:{fillColor:[13,79,196], fontSize:6.5}, margin:{bottom:12} };
+      const opcoes = { head:[['N°','Nome','Data','Valor']], theme:'grid', styles:{fontSize:6.5, cellPadding:1}, headStyles:{fillColor:[13,79,196], fontSize:6.5}, columnStyles:{3:{halign:'right'}}, margin:{bottom:12} };
       pdf.autoTable({ ...opcoes, startY:y, body:colEsq, margin:{...opcoes.margin, left:14, right:106} });
       let y1 = pdf.lastAutoTable.finalY;
       let y2 = y1;
@@ -1800,7 +1930,8 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
     pdf.autoTable({
       startY:y, head:[['N°','Nome do ofertante','Tipo de oferta','Data','Valor']],
       body: linhasOfertas.length ? linhasOfertas : [['—','Nenhuma oferta registrada neste mês.','','','']],
-      theme:'grid', styles:{fontSize:6.5, cellPadding:1.2}, headStyles:{fillColor:[13,79,196], fontSize:6.5}, margin:{left:14,right:14,bottom:12}
+      theme:'grid', styles:{fontSize:6.5, cellPadding:1.2}, headStyles:{fillColor:[13,79,196], fontSize:6.5},
+      columnStyles:{4:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
     });
     y = pdf.lastAutoTable.finalY + 2;
     y = faixaTotal(pdf, y, 'TOTAL DE OFERTAS (R$)', totalOfertas);
@@ -1812,7 +1943,7 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
     if(y + 9 > 283){ pdf.addPage(); y = cabecalhoRelatorioPdf(pdf, tituloPeriodo); }
     y = desenharAssinaturas(pdf, y + 10);
 
-    // ---- PÁGINA(S) SEGUINTE(S): despesas + balanço final ----
+    // ---- PÁGINA(S) SEGUINTE(S): despesas (por data) + balanço final ----
     // Sempre em página própria, para manter a separação clara do modelo —
     // mas só isso; o conteúdo em si já está compacto o bastante para caber
     // numa única página em qualquer mês de volume normal.
@@ -1823,7 +1954,8 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
     pdf.autoTable({
       startY:y, head:[['N°','Descrição da despesa','Data','Valor (R$)']],
       body: linhasDespesas.length ? linhasDespesas : [['—','Nenhuma despesa registrada neste mês.','','']],
-      theme:'grid', styles:{fontSize:6.5, cellPadding:1.2}, headStyles:{fillColor:[199,63,63], fontSize:6.5}, margin:{left:14,right:14,bottom:12}
+      theme:'grid', styles:{fontSize:6.5, cellPadding:1.2}, headStyles:{fillColor:[199,63,63], fontSize:6.5},
+      columnStyles:{3:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
     });
     y = pdf.lastAutoTable.finalY + 2;
     y = faixaTotal(pdf, y, 'TOTAL DE DESPESAS (R$)', totalSaidas, [248,215,215]);
@@ -1876,6 +2008,7 @@ $('btnPdfAnual').addEventListener('click', async ()=>{
     pdf.autoTable({
       startY: y, head:[['Mês','Saldo Anterior','Receitas','Despesas','Saldo do Mês']], body: linhas,
       theme:'grid', headStyles:{fillColor:[13,79,196]}, margin:{left:14,right:14},
+      columnStyles:{1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'}},
       didParseCell: (data)=>{ if(data.row.index === linhas.length-1) data.cell.styles.fontStyle = 'bold'; }
     });
     desenharAssinaturas(pdf, pdf.lastAutoTable.finalY + 15);
@@ -1896,18 +2029,21 @@ $('btnPdfFiel').addEventListener('click', async ()=>{
   btn.disabled = true; toast('Gerando PDF...');
   try{
     const nomeFiel = $('relFielBusca').value.trim();
-    const q = query(collection(db,'igrejas',state.igrejaAtualId,'lancamentos'), where('membroId','==',fielId));
-    const snaps = await getDocs(q);
-    const lancs = snaps.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> (a.dataStr||'').localeCompare(b.dataStr||''));
+    const inicio = $('relFielDataInicio').value, fim = $('relFielDataFim').value;
+    const lancs = filtrarPorPeriodo(await buscarLancamentosDoFiel(fielId), inicio, fim);
     const total = lancs.reduce((s,l)=>s+l.valor,0);
+    const periodoTexto = (inicio || fim)
+      ? `Período: ${inicio ? formatarDataBR(inicio) : 'início'} até ${fim ? formatarDataBR(fim) : 'hoje'}`
+      : 'Período: todo o histórico';
 
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF();
     const y = cabecalhoRelatorioPdf(pdf, `EXTRATO DE CONTRIBUIÇÕES — ${nomeFiel.toUpperCase()}`);
+    pdf.setFontSize(8.5); pdf.setTextColor(100); pdf.text(periodoTexto, 14, y-3); pdf.setTextColor(0);
     const linhas = lancs.map(l => [formatarDataBR(l.dataStr), l.categoriaNome||'', fmtBRL(l.valor)]);
     pdf.autoTable({
       startY: y, head:[['Data','Categoria','Valor']], body: linhas.length?linhas:[['—','Nenhuma contribuição registrada','—']],
-      theme:'grid', headStyles:{fillColor:[13,79,196]}, margin:{left:14,right:14}
+      theme:'grid', headStyles:{fillColor:[13,79,196]}, columnStyles:{2:{halign:'right'}}, margin:{left:14,right:14}
     });
     const yFinal = pdf.lastAutoTable.finalY + 15;
     pdf.setFontSize(11); pdf.setFont(undefined,'bold');
