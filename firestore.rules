@@ -1,0 +1,143 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logado() {
+      return request.auth != null;
+    }
+
+    function ehMembro(igrejaId) {
+      return logado() &&
+        exists(/databases/$(database)/documents/igrejas/$(igrejaId)/usuarios/$(request.auth.uid));
+    }
+
+    function membro(igrejaId) {
+      return get(/databases/$(database)/documents/igrejas/$(igrejaId)/usuarios/$(request.auth.uid)).data;
+    }
+
+    function papel(igrejaId) {
+      return membro(igrejaId).papel;
+    }
+
+    function isAdmin(igrejaId) {
+      return ehMembro(igrejaId) && papel(igrejaId) == 'admin';
+    }
+
+    // Contas criadas antes do sistema de permissão por aba não têm o campo
+    // abasPermitidas — nesse caso, tratamos como acesso total (não quebra
+    // quem já estava usando o app).
+    function abasDoMembro(igrejaId) {
+      return membro(igrejaId).abasPermitidas != null
+        ? membro(igrejaId).abasPermitidas
+        : ['lancamentos','fieis','cadastros','relatorios','competencias'];
+    }
+
+    function temAcessoAba(igrejaId, aba) {
+      return isAdmin(igrejaId) || (ehMembro(igrejaId) && aba in abasDoMembro(igrejaId));
+    }
+
+    function podeEditar(igrejaId) {
+      return ehMembro(igrejaId) && (papel(igrejaId) == 'admin' || papel(igrejaId) == 'cadastrador');
+    }
+
+    function podeEditarAba(igrejaId, aba) {
+      return temAcessoAba(igrejaId, aba) && podeEditar(igrejaId);
+    }
+
+    function conviteValido(igrejaId) {
+      return logado() &&
+        exists(/databases/$(database)/documents/igrejas/$(igrejaId)/convites/$(request.auth.token.email));
+    }
+
+    // Perfil pessoal do usuário (nome/e-mail) — só o próprio dono mexe
+    match /perfis/{uid} {
+      allow read, write: if logado() && request.auth.uid == uid;
+    }
+
+    // Índice: "em quais igrejas eu estou". Coleção de nível raiz (não é
+    // subcoleção, e não usamos collectionGroup) para permitir uma consulta
+    // simples e segura por uid, sem depender de checagem cruzada de outro
+    // documento — o Firestore não lida bem com isso em buscas amplas.
+    match /membrosIndice/{docId} {
+      allow read: if logado() && resource.data.uid == request.auth.uid;
+      allow create: if logado() && request.auth.uid == request.resource.data.uid &&
+        (
+          exists(/databases/$(database)/documents/igrejas/$(request.resource.data.igrejaId)/convites/$(request.auth.token.email)) ||
+          !exists(/databases/$(database)/documents/igrejas/$(request.resource.data.igrejaId)/usuarios/$(request.auth.uid))
+        )
+        || isAdmin(request.resource.data.igrejaId);
+      allow update: if isAdmin(resource.data.igrejaId);
+      allow delete: if logado() && (resource.data.uid == request.auth.uid || isAdmin(resource.data.igrejaId));
+    }
+
+    // Índice: "existe convite pendente pra mim". Mesmo raciocínio acima.
+    match /convitesIndice/{docId} {
+      allow read: if logado() && resource.data.email == request.auth.token.email;
+      allow create: if isAdmin(request.resource.data.igrejaId);
+      allow delete: if logado() && (resource.data.email == request.auth.token.email || isAdmin(resource.data.igrejaId));
+    }
+
+    match /igrejas/{igrejaId} {
+      allow read: if ehMembro(igrejaId);
+      // Qualquer usuário logado pode criar uma igreja nova (bootstrap).
+      // Logo em seguida o app cria o vínculo de admin para ele mesmo.
+      allow create: if logado();
+      allow update: if isAdmin(igrejaId);
+      allow delete: if false;
+
+      match /usuarios/{uid} {
+        allow read: if ehMembro(igrejaId);
+        // Pode criar o próprio vínculo se: (a) é o primeiro membro da igreja
+        // recém-criada por ele mesmo, ou (b) existe um convite válido para o
+        // e-mail dele. Um admin também pode adicionar outros diretamente.
+        allow create: if logado() && request.auth.uid == uid &&
+          (conviteValido(igrejaId) || !exists(/databases/$(database)/documents/igrejas/$(igrejaId)/usuarios/$(request.auth.uid)))
+          || isAdmin(igrejaId);
+        allow update: if isAdmin(igrejaId);
+        allow delete: if isAdmin(igrejaId) || (logado() && request.auth.uid == uid);
+      }
+
+      match /convites/{email} {
+        allow read: if isAdmin(igrejaId) || (logado() && request.auth.token.email == email);
+        allow write: if isAdmin(igrejaId);
+      }
+
+      match /membros/{docId} {
+        allow read: if temAcessoAba(igrejaId, 'fieis');
+        allow write: if podeEditarAba(igrejaId, 'fieis');
+      }
+
+      match /grupos/{docId} {
+        allow read: if temAcessoAba(igrejaId, 'cadastros');
+        allow write: if podeEditarAba(igrejaId, 'cadastros');
+      }
+
+      match /cargos/{docId} {
+        allow read: if temAcessoAba(igrejaId, 'cadastros');
+        allow write: if podeEditarAba(igrejaId, 'cadastros');
+      }
+
+      match /categoriasReceita/{docId} {
+        allow read: if temAcessoAba(igrejaId, 'cadastros');
+        allow write: if podeEditarAba(igrejaId, 'cadastros');
+      }
+
+      match /categoriasDespesa/{docId} {
+        allow read: if temAcessoAba(igrejaId, 'cadastros');
+        allow write: if podeEditarAba(igrejaId, 'cadastros');
+      }
+
+      match /lancamentos/{docId} {
+        allow read: if temAcessoAba(igrejaId, 'lancamentos');
+        allow create: if podeEditarAba(igrejaId, 'lancamentos');
+        allow update, delete: if podeEditarAba(igrejaId, 'lancamentos') &&
+          (resource.data.bloqueado == false || resource.data.bloqueado == null);
+      }
+
+      match /competencias/{docId} {
+        allow read: if temAcessoAba(igrejaId, 'competencias');
+        allow write: if isAdmin(igrejaId);
+      }
+    }
+  }
+}
