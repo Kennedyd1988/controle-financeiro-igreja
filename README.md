@@ -141,6 +141,15 @@ Cada lançamento agora tem dois campos de tempo separados:
 Por padrão, a competência acompanha a data escolhida — mas dá pra mudar
 manualmente, por exemplo quando um dízimo de junho é pago só em julho.
 
+## Logo oficial do SOFT+
+Troquei o "S+" genérico que eu tinha desenhado (só um placeholder) pela
+logo de verdade que vocês me mandaram — aparece agora na tela de login, no
+topo do menu lateral, no menu mobile, no ícone do app instalado (PWA) e no
+favicon da aba do navegador.
+
+Arquivos novos: `logo-horizontal.png`, `logo-simbolo.png`, e os três
+`icon-*.png` foram **substituídos** (mesmo nome de antes, conteúdo novo).
+
 ## Ordem alfabética nas listas de cadastro
 Passou a ser padrão em todo o app: **Categorias de Receita/Despesa,
 Grupos, Cargos** (tanto na tela de Categorias e Grupos quanto nos selects

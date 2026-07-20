@@ -4,7 +4,7 @@
 // pro GitHub apareça sozinha na próxima vez que o app abrir com conexão,
 // sem precisar desinstalar nada.
 
-const CACHE_NAME = 'softplus-cache-v1';
+const CACHE_NAME = 'softplus-cache-v2';
 const ARQUIVOS_BASE = [
   './',
   './index.html',
@@ -13,6 +13,8 @@ const ARQUIVOS_BASE = [
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
+  './logo-horizontal.png',
+  './logo-simbolo.png',
 ];
 
 self.addEventListener('install', (event) => {

@@ -59,9 +59,22 @@ service cloud.firestore {
         get(/databases/$(database)/documents/igrejas/$(igrejaId)/competencias/$(chave)).data.bloqueado == true;
     }
 
-    // Perfil pessoal do usuário (nome/e-mail) — só o próprio dono mexe
+    // Verifica se a campanha está encerrada (impede novos lançamentos nela,
+    // mesmo padrão usado para competências bloqueadas).
+    function campanhaEncerrada(igrejaId, campanhaId) {
+      return exists(/databases/$(database)/documents/igrejas/$(igrejaId)/campanhas/$(campanhaId)) &&
+        get(/databases/$(database)/documents/igrejas/$(igrejaId)/campanhas/$(campanhaId)).data.status == 'encerrada';
+    }
+
+    // Perfil pessoal do usuário (nome/e-mail) — só o próprio dono lê/edita.
+    // A exclusão é liberada pra qualquer usuário logado porque esse
+    // documento guarda só nome+e-mail (sem dados financeiros nem controle
+    // de acesso) e se recria sozinho no próximo login — serve pra permitir
+    // que um admin limpe o registro de alguém que perdeu acesso a todas as
+    // igrejas, sem precisar de um servidor próprio pra isso.
     match /perfis/{uid} {
-      allow read, write: if logado() && request.auth.uid == uid;
+      allow read, update, create: if logado() && request.auth.uid == uid;
+      allow delete: if logado();
     }
 
     // Índice: "em quais igrejas eu estou". Coleção de nível raiz (não é
@@ -155,6 +168,17 @@ service cloud.firestore {
       match /competencias/{docId} {
         allow read: if temAcessoAba(igrejaId, 'competencias');
         allow write: if isAdmin(igrejaId);
+      }
+
+      match /campanhas/{campanhaId} {
+        allow read: if temAcessoAba(igrejaId, 'campanhas');
+        allow write: if podeEditarAba(igrejaId, 'campanhas');
+
+        match /lancamentos/{lancId} {
+          allow read: if temAcessoAba(igrejaId, 'campanhas');
+          allow create, update, delete: if podeEditarAba(igrejaId, 'campanhas') &&
+            !campanhaEncerrada(igrejaId, campanhaId);
+        }
       }
     }
   }
