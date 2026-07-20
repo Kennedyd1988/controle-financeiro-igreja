@@ -49,6 +49,16 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/igrejas/$(igrejaId)/convites/$(request.auth.token.email));
     }
 
+    // Verifica de verdade se a competência está bloqueada, consultando a
+    // coleção "competencias" (fonte única da verdade) através do campo
+    // competenciaKey já salvo no próprio lançamento — evita ter que montar
+    // a chave "AAAA-MM" manualmente na regra.
+    function competenciaBloqueada(igrejaId, chave) {
+      return chave != null &&
+        exists(/databases/$(database)/documents/igrejas/$(igrejaId)/competencias/$(chave)) &&
+        get(/databases/$(database)/documents/igrejas/$(igrejaId)/competencias/$(chave)).data.bloqueado == true;
+    }
+
     // Perfil pessoal do usuário (nome/e-mail) — só o próprio dono mexe
     match /perfis/{uid} {
       allow read, write: if logado() && request.auth.uid == uid;
@@ -66,7 +76,9 @@ service cloud.firestore {
           !exists(/databases/$(database)/documents/igrejas/$(request.resource.data.igrejaId)/usuarios/$(request.auth.uid))
         )
         || isAdmin(request.resource.data.igrejaId);
-      allow update: if isAdmin(resource.data.igrejaId);
+      allow update: if isAdmin(resource.data.igrejaId) ||
+        (logado() && resource.data.uid == request.auth.uid &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['precisaTrocarSenha']));
       allow delete: if logado() && (resource.data.uid == request.auth.uid || isAdmin(resource.data.igrejaId));
     }
 
@@ -93,7 +105,9 @@ service cloud.firestore {
         allow create: if logado() && request.auth.uid == uid &&
           (conviteValido(igrejaId) || !exists(/databases/$(database)/documents/igrejas/$(igrejaId)/usuarios/$(request.auth.uid)))
           || isAdmin(igrejaId);
-        allow update: if isAdmin(igrejaId);
+        allow update: if isAdmin(igrejaId) ||
+          (logado() && request.auth.uid == uid &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['precisaTrocarSenha']));
         allow delete: if isAdmin(igrejaId) || (logado() && request.auth.uid == uid);
       }
 
@@ -129,9 +143,13 @@ service cloud.firestore {
 
       match /lancamentos/{docId} {
         allow read: if temAcessoAba(igrejaId, 'lancamentos');
-        allow create: if podeEditarAba(igrejaId, 'lancamentos');
-        allow update, delete: if podeEditarAba(igrejaId, 'lancamentos') &&
-          (resource.data.bloqueado == false || resource.data.bloqueado == null);
+        allow create: if podeEditarAba(igrejaId, 'lancamentos') &&
+          !competenciaBloqueada(igrejaId, request.resource.data.competenciaKey);
+        allow update: if podeEditarAba(igrejaId, 'lancamentos') &&
+          !competenciaBloqueada(igrejaId, resource.data.competenciaKey) &&
+          !competenciaBloqueada(igrejaId, request.resource.data.competenciaKey);
+        allow delete: if podeEditarAba(igrejaId, 'lancamentos') &&
+          !competenciaBloqueada(igrejaId, resource.data.competenciaKey);
       }
 
       match /competencias/{docId} {

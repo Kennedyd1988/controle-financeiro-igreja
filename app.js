@@ -2060,3 +2060,13 @@ $('btnPdfFiel').addEventListener('click', async ()=>{
     btn.disabled = false;
   }
 });
+
+// ---------- PWA: registra o service worker ----------
+// Assim o app pode ser instalado no celular (ícone próprio, tela cheia) e
+// funciona offline pra abrir a tela de login. Atualizações são detectadas
+// sozinhas na próxima vez que o app abrir com internet.
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js').catch(()=>{ /* offline na primeira visita, sem problema */ });
+  });
+}

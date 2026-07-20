@@ -141,6 +141,31 @@ Cada lançamento agora tem dois campos de tempo separados:
 Por padrão, a competência acompanha a data escolhida — mas dá pra mudar
 manualmente, por exemplo quando um dízimo de junho é pago só em julho.
 
+## App instalável no Android (PWA)
+O app agora pode ser **instalado** no celular como se fosse um app de
+verdade — ícone próprio na tela inicial, abre em tela cheia (sem barra do
+navegador), funciona bem em conexão fraca.
+
+**Arquivos novos que precisam ir pro GitHub** (mesma pasta dos outros):
+`manifest.json`, `sw.js`, `icon-192.png`, `icon-512.png`, `icon-512-maskable.png`
+
+**Como instalar no Android:**
+1. Abra o link do app no **Chrome** do celular
+2. Vai aparecer um banner "Adicionar à tela inicial" (ou toque no menu ⋮
+   → "Instalar app" / "Adicionar à tela inicial")
+3. Pronto — abre um ícone próprio, como qualquer outro app
+
+**Como funcionam as atualizações:** toda vez que você atualizar os arquivos
+no GitHub, na próxima vez que alguém abrir o app **com internet**, ele
+busca a versão mais nova sozinho — não precisa desinstalar nem reinstalar
+nada. Só em caso de estar completamente offline é que ele mostra a última
+versão que tinha guardado.
+
+**Ícone**: gerei um ícone simples com "S+" na cor azul do app como ponto de
+partida. Se quiser trocar por um de verdade (com a logo da sua igreja ou
+outra arte), é só substituir os três arquivos `icon-*.png` por imagens do
+mesmo tamanho (192x192 e 512x512 pixels, formato PNG).
+
 ## Lote de ajustes (ordenação, bloqueio, senha, exclusão)
 
 **Ordenação e alinhamento**
