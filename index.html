@@ -364,6 +364,16 @@
             <option value="receita">Receitas</option>
             <option value="despesa">Despesas</option>
           </select>
+          <select id="lancCategoriaFiltro">
+            <option value="">Todas as categorias</option>
+          </select>
+          <div style="position:relative; min-width:180px;">
+            <input type="text" id="lancFielFiltroBusca" placeholder="Filtrar por fiel..." autocomplete="off"
+              style="width:100%; padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface);">
+            <input type="hidden" id="lancFielFiltro">
+            <div class="combo-lista" id="lancFielFiltroLista"></div>
+          </div>
+          <button class="btn btn-sm" id="btnLimparFiltrosLanc">Limpar filtros</button>
         </div>
         <div class="card" id="lancTotalizador" style="margin-bottom:14px; display:flex; gap:24px; flex-wrap:wrap;">
           <div><div class="stat-label">Total de receitas</div><div class="stat-value green num" id="lancTotalReceitas" style="font-size:18px;">R$ 0,00</div></div>
@@ -667,6 +677,7 @@
       <div class="field"><label>Telefone</label><input id="fFormTelefone"></div>
       <div class="field"><label>E-mail</label><input id="fFormEmail"></div>
       <div class="field"><label>CPF</label><input id="fFormCpf"></div>
+      <div class="field"><label>RG</label><input id="fFormRg"></div>
       <div class="field"><label>Observações</label><input id="fFormObs"></div>
       <div class="modal-actions">
         <button class="btn" id="btnCancelarFiel">Cancelar</button>
