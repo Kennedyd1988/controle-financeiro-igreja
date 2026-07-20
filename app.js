@@ -1846,6 +1846,19 @@ function desenharAssinaturas(pdf, y){
   pdf.text('Tesoureiro', 150, y+9, { align:'center' });
   return y + 9;
 }
+// Garante que ainda cabe "alturaMin" mm antes do fim da página; se não
+// couber, abre página nova e já redesenha o cabeçalho padrão do relatório
+// (assim nenhuma barra de título/total fica cortada ou "solta" sem
+// contexto no topo de uma página). Usado antes de qualquer elemento
+// desenhado na mão (faixaTitulo/faixaTotal/assinaturas) — as tabelas do
+// autoTable já paginam sozinhas.
+function garantirEspaco(pdf, y, alturaMin, tituloBarra){
+  if(y + alturaMin > 283){
+    pdf.addPage();
+    return cabecalhoRelatorioPdf(pdf, tituloBarra);
+  }
+  return y;
+}
 // Soma tudo o que aconteceu ANTES da data informada (para o "saldo anterior")
 // Soma tudo o que aconteceu ANTES da data informada (para o "saldo
 // anterior"). Usa um único filtro de intervalo (dataStr < limite), que o
@@ -1921,8 +1934,10 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
     } else {
       pdf.setFontSize(8); pdf.text('Nenhum dízimo registrado neste mês.', 14, y+5); y += 9;
     }
+    y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
     y = faixaTotal(pdf, y, 'TOTAL DE DÍZIMOS (R$)', totalDizimos);
 
+    y = garantirEspaco(pdf, y, 25, tituloPeriodo);
     y = faixaTitulo(pdf, y, 'RELAÇÃO DE OFERTAS');
     const linhasOfertas = ofertas.map((l,i) => [
       i+1, l.membroNome||'', [l.categoriaNome, l.descricao].filter(Boolean).join(' - '), formatarDataBR(l.dataStr), fmtBRL(l.valor)
@@ -1934,13 +1949,15 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
       columnStyles:{4:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
     });
     y = pdf.lastAutoTable.finalY + 2;
+    y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
     y = faixaTotal(pdf, y, 'TOTAL DE OFERTAS (R$)', totalOfertas);
+    y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
     y = faixaTotal(pdf, y, 'TOTAL DE ENTRADAS DO MÊS (R$)', totalEntradas, [200,230,210]);
 
     // Só abre página nova pra assinatura se realmente não couber (raro,
     // meses com volume bem fora do comum) — refaz o cabeçalho pra não
     // deixar uma página "solta" sem contexto.
-    if(y + 9 > 283){ pdf.addPage(); y = cabecalhoRelatorioPdf(pdf, tituloPeriodo); }
+    y = garantirEspaco(pdf, y, 19, tituloPeriodo);
     y = desenharAssinaturas(pdf, y + 10);
 
     // ---- PÁGINA(S) SEGUINTE(S): despesas (por data) + balanço final ----
@@ -1958,8 +1975,10 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
       columnStyles:{3:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
     });
     y = pdf.lastAutoTable.finalY + 2;
+    y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
     y = faixaTotal(pdf, y, 'TOTAL DE DESPESAS (R$)', totalSaidas, [248,215,215]);
 
+    y = garantirEspaco(pdf, y, 55, tituloPeriodo);
     y = faixaTitulo(pdf, y, 'BALANÇO FINAL');
     const percentual = totalEntradas > 0 ? ((totalSaidas/totalEntradas)*100).toFixed(2)+'%' : '—';
     const linhasBalanco = [
@@ -1976,7 +1995,7 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
       didParseCell: (data)=>{ if(data.row.index === linhasBalanco.length-1) data.row.cells[0].styles.fillColor = data.row.cells[1].styles.fillColor = [210,235,215]; }
     });
     y = pdf.lastAutoTable.finalY + 10;
-    if(y + 9 > 283){ pdf.addPage(); y = cabecalhoRelatorioPdf(pdf, tituloPeriodo) + 10; }
+    y = garantirEspaco(pdf, y, 9, tituloPeriodo);
     desenharAssinaturas(pdf, y);
 
     pdf.save(nomeArquivoPdf(`relatorio_mensal_${MESES[mes-1]}_${ano}`));
@@ -2004,14 +2023,16 @@ $('btnPdfAnual').addEventListener('click', async ()=>{
 
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF();
-    const y = cabecalhoRelatorioPdf(pdf, `FLUXO DE CAIXA ANUAL — ${ano}`);
+    const tituloAnual = `FLUXO DE CAIXA ANUAL — ${ano}`;
+    const y = cabecalhoRelatorioPdf(pdf, tituloAnual);
     pdf.autoTable({
       startY: y, head:[['Mês','Saldo Anterior','Receitas','Despesas','Saldo do Mês']], body: linhas,
-      theme:'grid', headStyles:{fillColor:[13,79,196]}, margin:{left:14,right:14},
+      theme:'grid', headStyles:{fillColor:[13,79,196]}, margin:{left:14,right:14,bottom:12},
       columnStyles:{1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'}},
       didParseCell: (data)=>{ if(data.row.index === linhas.length-1) data.cell.styles.fontStyle = 'bold'; }
     });
-    desenharAssinaturas(pdf, pdf.lastAutoTable.finalY + 15);
+    const yAssinatura = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 15, 9, tituloAnual);
+    desenharAssinaturas(pdf, yAssinatura);
     pdf.save(nomeArquivoPdf(`fluxo_anual_${ano}`));
     toast('PDF gerado!');
   } catch(e){
@@ -2038,14 +2059,15 @@ $('btnPdfFiel').addEventListener('click', async ()=>{
 
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF();
-    const y = cabecalhoRelatorioPdf(pdf, `EXTRATO DE CONTRIBUIÇÕES — ${nomeFiel.toUpperCase()}`);
+    const tituloExtrato = `EXTRATO DE CONTRIBUIÇÕES — ${nomeFiel.toUpperCase()}`;
+    const y = cabecalhoRelatorioPdf(pdf, tituloExtrato);
     pdf.setFontSize(8.5); pdf.setTextColor(100); pdf.text(periodoTexto, 14, y-3); pdf.setTextColor(0);
     const linhas = lancs.map(l => [formatarDataBR(l.dataStr), l.categoriaNome||'', fmtBRL(l.valor)]);
     pdf.autoTable({
       startY: y, head:[['Data','Categoria','Valor']], body: linhas.length?linhas:[['—','Nenhuma contribuição registrada','—']],
-      theme:'grid', headStyles:{fillColor:[13,79,196]}, columnStyles:{2:{halign:'right'}}, margin:{left:14,right:14}
+      theme:'grid', headStyles:{fillColor:[13,79,196]}, columnStyles:{2:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
     });
-    const yFinal = pdf.lastAutoTable.finalY + 15;
+    let yFinal = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 15, 24, tituloExtrato);
     pdf.setFontSize(11); pdf.setFont(undefined,'bold');
     pdf.text(`Total geral: ${fmtBRL(total)}`, 14, yFinal);
     pdf.setFont(undefined,'normal');

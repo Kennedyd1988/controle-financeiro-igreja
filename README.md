@@ -141,6 +141,18 @@ Cada lançamento agora tem dois campos de tempo separados:
 Por padrão, a competência acompanha a data escolhida — mas dá pra mudar
 manualmente, por exemplo quando um dízimo de junho é pago só em julho.
 
+## Revisão: quebra de página automática nos PDFs
+Conferi os três relatórios em PDF (mensal, anual, do fiel). As tabelas em si
+(receitas, ofertas, despesas, extrato) já pulavam de página sozinhas
+quando não cabiam mais — isso é automático da biblioteca de tabelas. O que
+**não** tinha essa proteção eram os elementos desenhados à parte: as
+barras de título/total coloridas e o bloco de assinatura. Corrigido: agora,
+antes de desenhar qualquer um desses elementos, o app verifica se ainda
+sobra espaço na página atual e, se não sobrar, pula pra próxima
+automaticamente (recriando o cabeçalho do relatório, pra nenhuma página
+ficar "solta" sem contexto). Vale pros três relatórios — inclusive o
+extrato por fiel, que é o que mais cresce com o tempo (histórico de anos).
+
 ## App instalável no Android (PWA)
 O app agora pode ser **instalado** no celular como se fosse um app de
 verdade — ícone próprio na tela inicial, abre em tela cheia (sem barra do
