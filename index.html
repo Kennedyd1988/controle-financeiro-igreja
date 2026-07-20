@@ -28,7 +28,7 @@
     min-height:100vh;
   }
   ::selection{background:var(--brand-dim);}
-  .num{font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; letter-spacing:-0.2px;}
+  .num{font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; letter-spacing:-0.2px; text-align:right;}
   h1,h2,h3,.serif{font-family:'Source Serif 4',serif;}
   a{color:var(--brand);}
   button{font-family:inherit; cursor:pointer;}
@@ -255,7 +255,7 @@
         <button class="btn btn-primary" id="btnAuthSubmit">Entrar</button>
       </div>
       <div id="authError"></div>
-      <div class="auth-toggle">
+      <div class="auth-toggle" id="authToggleWrap" style="display:none;">
         <span id="authToggleText">Ainda não tem conta?</span>
         <button id="btnAuthToggle">Criar conta</button>
       </div>
@@ -383,7 +383,7 @@
         <div class="card" style="padding:0;">
           <div class="table-scroll">
           <table>
-            <thead><tr><th>Data</th><th>Competência</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Fiel</th><th>Valor</th><th></th></tr></thead>
+            <thead><tr><th>Data</th><th>Competência</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Fiel</th><th style="text-align:right;">Valor</th><th></th></tr></thead>
             <tbody id="lancTbody"></tbody>
           </table>
           </div>
@@ -496,6 +496,18 @@
             <input type="hidden" id="relFiel">
             <div class="combo-lista" id="relFielLista"></div>
           </div>
+          <div class="toolbar" style="margin-bottom:12px;">
+            <div class="field" style="margin-bottom:0;">
+              <label>De</label>
+              <input type="date" id="relFielDataInicio">
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label>Até</label>
+              <input type="date" id="relFielDataFim">
+            </div>
+            <button class="btn btn-sm" id="btnLimparPeriodoFiel" style="align-self:flex-end;">Ver tudo</button>
+          </div>
+          <div class="abas-hint" style="margin-bottom:10px;">Deixe as datas em branco para consolidar o período inteiro, mesmo que passe de um ano.</div>
           <div id="relFielResultado"></div>
         </div>
       </section>
@@ -715,6 +727,12 @@
         </div>
       </div>
       <div class="field">
+        <label style="display:flex; align-items:center; gap:8px; font-weight:400;">
+          <input type="checkbox" id="convFormTrocarSenha" checked style="width:16px; height:16px;">
+          Pedir para a pessoa trocar a senha no primeiro acesso
+        </label>
+      </div>
+      <div class="field">
         <label>Papel</label>
         <select id="convFormPapel">
           <option value="leitura">Leitura</option>
@@ -738,11 +756,12 @@
   <!-- MODAL: editar permissões de usuário existente -->
   <div class="modal-backdrop" id="modalEditarUsuario">
     <div class="modal">
-      <h3>Editar permissões</h3>
-      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:14px;" id="editUsuarioNome"></p>
+      <h3>Editar usuário</h3>
+      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:14px;" id="editUsuarioEmail"></p>
       <p class="abas-hint" id="editAvisoSelf" style="display:none; color:var(--amber); margin-bottom:12px;">
         Você está editando sua própria conta — não é possível remover seu próprio acesso de Administrador (para evitar ficar sem ninguém com acesso total à igreja).
       </p>
+      <div class="field"><label>Nome<span class="req">*</span></label><input type="text" id="editFormNome" required></div>
       <div class="field">
         <label>Papel</label>
         <select id="editFormPapel">
@@ -755,9 +774,38 @@
         <label>Abas que essa pessoa pode acessar</label>
         <div class="abas-list" id="editFormAbas"></div>
       </div>
+      <div class="field">
+        <label style="display:flex; align-items:center; gap:8px; font-weight:400;">
+          <input type="checkbox" id="editFormTrocarSenha" style="width:16px; height:16px;">
+          Pedir para a pessoa trocar a senha no próximo acesso
+        </label>
+      </div>
+      <div class="field" style="border-top:1px solid var(--line); padding-top:14px;">
+        <label>Senha</label>
+        <div class="abas-hint" style="margin-bottom:8px;">
+          Por segurança, não é possível definir a senha de uma conta que já existe direto por
+          aqui. Envie um link por e-mail para a pessoa escolher uma senha nova.
+        </div>
+        <button class="btn btn-sm" id="btnResetSenhaUsuario" type="button">Enviar e-mail para redefinir senha</button>
+      </div>
       <div class="modal-actions">
         <button class="btn" id="btnCancelarEditarUsuario">Cancelar</button>
         <button class="btn btn-primary" id="btnSalvarEditarUsuario">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: troca de senha obrigatória no primeiro acesso -->
+  <div class="modal-backdrop" id="modalTrocarSenha">
+    <div class="modal">
+      <h3>Defina sua senha</h3>
+      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:14px;">
+        Por segurança, você precisa escolher uma senha nova antes de continuar.
+      </p>
+      <div class="field"><label>Nova senha<span class="req">*</span></label><input type="password" id="novaSenhaObrigatoria" placeholder="Mínimo 6 caracteres" required></div>
+      <div class="field"><label>Confirmar nova senha<span class="req">*</span></label><input type="password" id="novaSenhaObrigatoriaConfirmar" placeholder="Repita a senha" required></div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="btnSalvarNovaSenhaObrigatoria" style="width:100%;">Salvar e continuar</button>
       </div>
     </div>
   </div>
