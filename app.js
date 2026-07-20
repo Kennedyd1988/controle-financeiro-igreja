@@ -27,6 +27,7 @@ const ABAS_CONFIGURAVEIS = [
   { id: 'cadastros', label: 'Categorias e Grupos' },
   { id: 'relatorios', label: 'Relatórios' },
   { id: 'competencias', label: 'Competências' },
+  { id: 'campanhas', label: 'Campanhas' },
 ];
 const TODAS_ABAS = ABAS_CONFIGURAVEIS.map(a => a.id);
 
@@ -56,6 +57,11 @@ const state = {
   lancTemMais: false,
   competenciasBloqueadas: new Set(),
   editandoLancCompetenciaOriginal: null,
+  campanhas: [],
+  campanhaAtualId: null,
+  campanhaAtualDados: null,
+  editandoCampanhaId: null,
+  editandoCampLancId: null,
 };
 
 // ---------- helpers ----------
@@ -219,6 +225,23 @@ $('btnAuthSubmit').addEventListener('click', async ()=>{
   }
 });
 
+$('btnEsqueciSenha').addEventListener('click', async ()=>{
+  let email = $('inputEmail').value.trim();
+  if(!email){
+    email = (prompt('Digite o e-mail da sua conta:') || '').trim();
+  }
+  if(!email){ return; }
+  $('authError').textContent = '';
+  try{
+    await sendPasswordResetEmail(auth, email);
+    $('authError').style.color = 'var(--green)';
+    $('authError').textContent = `Enviamos um link de redefinição para ${email}. Verifique também a caixa de spam.`;
+  } catch(e){
+    $('authError').style.color = '';
+    $('authError').textContent = traduzErroAuth(e.code);
+  }
+});
+
 function traduzErroAuth(code){
   const map = {
     'auth/invalid-email': 'E-mail inválido.',
@@ -299,10 +322,19 @@ async function resgatarConvitesPendentes(user){
 async function carregarIgrejasDoUsuario(user){
   const q = query(collection(db, 'membrosIndice'), where('uid', '==', user.uid));
   const snaps = await getDocs(q);
-  state.igrejas = snaps.docs.map(d => {
+  // Busca o nome ATUAL de cada igreja (em vez de confiar só no que estava
+  // salvo no índice, que só é atualizado por quem editou por último) —
+  // assim o menu de troca de igreja sempre mostra o nome certo pra todo
+  // mundo, não só pra quem fez a alteração.
+  state.igrejas = await Promise.all(snaps.docs.map(async (d) => {
     const dado = d.data();
-    return { id: dado.igrejaId, nome: dado.igrejaNome, papel: dado.papel, abas: dado.abas || TODAS_ABAS, precisaTrocarSenha: !!dado.precisaTrocarSenha };
-  });
+    let nome = dado.igrejaNome;
+    try{
+      const igSnap = await getDoc(doc(db,'igrejas', dado.igrejaId));
+      if(igSnap.exists() && igSnap.data().nome) nome = igSnap.data().nome;
+    } catch(e){ /* usa o nome salvo no índice como respaldo */ }
+    return { id: dado.igrejaId, nome, papel: dado.papel, abas: dado.abas || TODAS_ABAS, precisaTrocarSenha: !!dado.precisaTrocarSenha };
+  }));
   const sel = $('igrejaSwitch');
   if(state.igrejas.length === 0){
     sel.innerHTML = `<option>Nenhuma igreja ainda</option>`;
@@ -335,6 +367,7 @@ async function onIgrejaChange(){
   // reseta paginação/busca de fiéis, senão mostraria dados da igreja anterior
   state.fieisPagina = []; state.fieisCursor = null; state.fieisTemMais = false; state.fieisBuscaAtual = '';
   if($('fieisBusca')) $('fieisBusca').value = '';
+  state.campanhas = []; state.campanhaAtualId = null; state.campanhaAtualDados = null;
   await carregarDadosDaIgreja();
   await carregarCompetenciasBloqueadas();
   aplicarLogoSidebar();
@@ -417,6 +450,8 @@ $('btnLimparPeriodoFiel').addEventListener('click', ()=>{
 });
 configurarComboboxFiel('igPastorBusca', 'igPastorId', 'igPastorLista');
 configurarComboboxFiel('igTesoureiroBusca', 'igTesoureiroId', 'igTesoureiroLista');
+configurarComboboxFiel('campFormResponsavelBusca', 'campFormResponsavelId', 'campFormResponsavelLista');
+configurarComboboxFiel('campLancFormFielBusca', 'campLancFormFiel', 'campLancFormFielLista');
 
 // ---------- MENU MOBILE (gaveta) ----------
 function abrirMenuMobile(){
@@ -449,7 +484,7 @@ function refreshView(name){
     painel: renderPainel, lancamentos: renderLancamentos, fieis: renderFieis,
     cadastros: renderCadastros, relatorios: renderRelatorios, competencias: renderCompetencias,
     igreja: renderIgreja, usuarios: renderUsuarios, novaIgreja: ()=>{},
-    importar: renderImportar,
+    importar: renderImportar, campanhas: renderCampanhas,
   };
   if(map[name]) map[name]();
 }
@@ -1152,6 +1187,465 @@ $('btnToggleComp').addEventListener('click', async ()=>{
   renderCompetencias();
 });
 
+// ---------- CAMPANHAS ----------
+function labelTipoCampanha(tipo){
+  return { arrecadacao:'Arrecadação', venda:'Venda de algo', compra:'Compra coletiva', outro:'Outro' }[tipo] || tipo;
+}
+async function somarCampanha(campanhaId, tipo){
+  const q = query(collection(db,'igrejas',state.igrejaAtualId,'campanhas',campanhaId,'lancamentos'), where('tipo','==',tipo));
+  try{
+    const snap = await getAggregateFromServer(q, { total: sum('valor') });
+    return snap.data().total || 0;
+  } catch(e){
+    const docs = await getDocs(q);
+    return docs.docs.reduce((s,d)=> s + (d.data().valor||0), 0);
+  }
+}
+async function campanhaTemLancamentos(campanhaId){
+  const snap = await getDocs(query(collection(db,'igrejas',state.igrejaAtualId,'campanhas',campanhaId,'lancamentos'), limit(1)));
+  return !snap.empty;
+}
+async function carregarCampanhas(){
+  const snaps = await getDocs(collection(db,'igrejas',state.igrejaAtualId,'campanhas'));
+  state.campanhas = snaps.docs.map(d=>({id:d.id, ...d.data()}));
+}
+
+let campanhasInit = false;
+async function renderCampanhas(){
+  if(!campanhasInit){
+    campanhasInit = true;
+    $('campanhasFiltroStatus').addEventListener('change', desenharListaCampanhas);
+    $('btnVoltarCampanhas').addEventListener('click', ()=> switchView('campanhas'));
+  }
+  await carregarCampanhas();
+  await desenharListaCampanhas();
+}
+async function desenharListaCampanhas(){
+  const editavel = podeEditarAba('campanhas');
+  $('btnNovaCampanha').style.display = editavel ? 'inline-flex' : 'none';
+  const filtro = $('campanhasFiltroStatus').value;
+  let lista = state.campanhas;
+  if(filtro) lista = lista.filter(c=>c.status===filtro);
+  lista = [...lista].sort((a,b)=> (b.dataInicio||'').localeCompare(a.dataInicio||''));
+  $('campanhasEmpty').style.display = lista.length ? 'none' : 'block';
+
+  const comMeta = lista.filter(c=>c.meta);
+  const totaisEntrada = await Promise.all(comMeta.map(c => somarCampanha(c.id, 'entrada')));
+  const mapaArrecadado = {};
+  comMeta.forEach((c,i)=> mapaArrecadado[c.id] = totaisEntrada[i]);
+
+  $('campanhasLista').innerHTML = lista.map(c => {
+    const arrecadado = mapaArrecadado[c.id] || 0;
+    const progresso = c.meta ? Math.min(100, Math.round((arrecadado/c.meta)*100)) : null;
+    return `
+    <div class="campanha-card" data-id="${c.id}">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+        <div>
+          <div style="font-weight:600; font-size:15px;">${c.nome}</div>
+          <div style="font-size:12.5px; color:var(--text-dim); margin-top:2px;">${labelTipoCampanha(c.tipo)}${c.descricao ? ' · '+c.descricao : ''}${c.responsavelNome ? ' · Resp.: '+c.responsavelNome : ''}</div>
+        </div>
+        <span class="tag ${c.status}">${c.status === 'ativa' ? 'Ativa' : 'Encerrada'}</span>
+      </div>
+      ${c.meta ? `
+      <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-dim); margin-top:10px;">
+        <span>${fmtBRL(arrecadado)} arrecadado</span><span>meta ${fmtBRL(c.meta)}</span>
+      </div>
+      <div class="campanha-progress"><div class="campanha-progress-fill" style="width:${progresso}%;"></div></div>
+      ` : ''}
+      ${editavel ? `<button class="btn btn-sm btn-danger" data-del-campanha="${c.id}" style="margin-top:10px;" type="button">Excluir</button>` : ''}
+    </div>`;
+  }).join('');
+
+  $('campanhasLista').querySelectorAll('.campanha-card').forEach(el=>{
+    el.addEventListener('click', (e)=>{
+      if(e.target.closest('[data-del-campanha]')) return;
+      abrirDetalheCampanha(el.dataset.id);
+    });
+  });
+  $('campanhasLista').querySelectorAll('[data-del-campanha]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const id = btn.dataset.delCampanha;
+      if(await campanhaTemLancamentos(id)){ toast('Não é possível excluir: essa campanha já tem lançamentos.', true); return; }
+      if(!confirm('Excluir esta campanha?')) return;
+      await deleteDoc(doc(db,'igrejas',state.igrejaAtualId,'campanhas', id));
+      toast('Campanha excluída.'); await carregarCampanhas(); desenharListaCampanhas();
+    });
+  });
+}
+
+$('btnNovaCampanha').addEventListener('click', ()=> abrirModalCampanha(null));
+function abrirModalCampanha(c){
+  state.editandoCampanhaId = c ? c.id : null;
+  $('modalCampanhaTitulo').textContent = c ? 'Editar campanha' : 'Nova campanha';
+  $('campFormNome').value = c?.nome || '';
+  $('campFormDescricao').value = c?.descricao || '';
+  $('campFormTipo').value = c?.tipo || 'arrecadacao';
+  $('campFormMeta').value = c?.meta || '';
+  $('campFormResponsavelBusca').value = c?.responsavelNome || '';
+  $('campFormResponsavelId').value = c?.responsavelFielId || '';
+  $('campFormDataInicio').value = c?.dataInicio || new Date().toISOString().slice(0,10);
+  $('campFormDataFim').value = c?.dataFim || '';
+  $('modalCampanha').classList.add('active');
+}
+$('btnCancelarCampanha').addEventListener('click', ()=> $('modalCampanha').classList.remove('active'));
+$('btnSalvarCampanha').addEventListener('click', async ()=>{
+  if(!validarObrigatorios([{id:'campFormNome', nome:'Nome'}, {id:'campFormDataInicio', nome:'Data de início'}])) return;
+  const payload = {
+    nome: $('campFormNome').value.trim(),
+    descricao: $('campFormDescricao').value.trim(),
+    tipo: $('campFormTipo').value,
+    meta: $('campFormMeta').value ? parseFloat($('campFormMeta').value) : null,
+    responsavelFielId: $('campFormResponsavelId').value || null,
+    responsavelNome: $('campFormResponsavelId').value ? $('campFormResponsavelBusca').value.trim() : '',
+    dataInicio: $('campFormDataInicio').value,
+    dataFim: $('campFormDataFim').value || null,
+  };
+  try{
+    if(state.editandoCampanhaId){
+      await updateDoc(doc(db,'igrejas',state.igrejaAtualId,'campanhas',state.editandoCampanhaId), payload);
+    } else {
+      payload.status = 'ativa';
+      payload.criadoPor = state.user.uid; payload.criadoEm = serverTimestamp();
+      await addDoc(collection(db,'igrejas',state.igrejaAtualId,'campanhas'), payload);
+    }
+    $('modalCampanha').classList.remove('active');
+    toast('Campanha salva!');
+    await carregarCampanhas(); desenharListaCampanhas();
+  } catch(e){ toast('Erro ao salvar: '+e.message, true); }
+});
+
+async function abrirDetalheCampanha(id){
+  state.campanhaAtualId = id;
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-campanhaDetalhe').classList.add('active');
+  await renderCampanhaDetalhe();
+}
+
+let campDetalheInit = false;
+async function renderCampanhaDetalhe(){
+  if(!campDetalheInit){
+    campDetalheInit = true;
+    $('campLancTipoFiltro').addEventListener('change', carregarELancamentosCampanha);
+    $('btnNovoLancCampanha').addEventListener('click', ()=> abrirModalCampLanc(null));
+    $('btnEncerrarCampanha').addEventListener('click', toggleEncerrarCampanha);
+    $('btnPdfCampanha').addEventListener('click', gerarPdfCampanha);
+    $('btnExportarCampLanc').addEventListener('click', exportarLancamentosCampanha);
+    $('btnImportarCampLanc').addEventListener('click', abrirModalImportarCampanha);
+  }
+  const snap = await getDoc(doc(db,'igrejas',state.igrejaAtualId,'campanhas',state.campanhaAtualId));
+  if(!snap.exists()){ switchView('campanhas'); return; }
+  state.campanhaAtualDados = { id: snap.id, ...snap.data() };
+  const c = state.campanhaAtualDados;
+  $('campDetNome').textContent = c.nome;
+  $('campDetDescricao').textContent = [labelTipoCampanha(c.tipo), c.responsavelNome ? 'Responsável: '+c.responsavelNome : null].filter(Boolean).join(' · ');
+  const podeGerenciar = podeEditarAba('campanhas');
+  $('btnEncerrarCampanha').style.display = podeGerenciar ? 'inline-flex' : 'none';
+  $('btnEncerrarCampanha').textContent = c.status === 'ativa' ? 'Encerrar campanha' : 'Reabrir campanha';
+  $('btnNovoLancCampanha').style.display = (podeGerenciar && c.status === 'ativa') ? 'inline-flex' : 'none';
+  $('btnImportarCampLanc').style.display = (isAdmin() && c.status === 'ativa') ? 'inline-flex' : 'none';
+
+  await carregarELancamentosCampanha();
+}
+
+async function carregarELancamentosCampanha(){
+  const c = state.campanhaAtualDados;
+  const tipoFiltro = $('campLancTipoFiltro').value;
+  const snaps = await getDocs(collection(db,'igrejas',state.igrejaAtualId,'campanhas',c.id,'lancamentos'));
+  let lancs = snaps.docs.map(d=>({id:d.id, ...d.data()}));
+  const totalEntradas = lancs.filter(l=>l.tipo==='entrada').reduce((s,l)=>s+l.valor,0);
+  const totalSaidas = lancs.filter(l=>l.tipo==='saida').reduce((s,l)=>s+l.valor,0);
+  $('campDetTotalEntradas').textContent = fmtBRL(totalEntradas);
+  $('campDetTotalSaidas').textContent = fmtBRL(totalSaidas);
+  const saldoEl = $('campDetSaldo');
+  saldoEl.textContent = fmtBRL(totalEntradas-totalSaidas);
+  saldoEl.className = 'stat-value num ' + (totalEntradas-totalSaidas>=0?'green':'red');
+
+  if(c.meta){
+    $('campDetProgressoCard').style.display = 'block';
+    $('campDetArrecadado').textContent = fmtBRL(totalEntradas);
+    $('campDetMeta').textContent = fmtBRL(c.meta);
+    $('campDetProgressoFill').style.width = Math.min(100, Math.round((totalEntradas/c.meta)*100)) + '%';
+  } else {
+    $('campDetProgressoCard').style.display = 'none';
+  }
+
+  if(tipoFiltro) lancs = lancs.filter(l=>l.tipo===tipoFiltro);
+  lancs.sort((a,b)=> (b.data||'').localeCompare(a.data||''));
+  const editavel = podeEditarAba('campanhas') && c.status === 'ativa';
+  $('campLancEmpty').style.display = lancs.length ? 'none' : 'block';
+  $('campLancTbody').innerHTML = lancs.map(l => `
+    <tr>
+      <td>${l.data ? formatarDataBR(l.data) : '—'}</td>
+      <td><span class="tag ${l.tipo==='entrada'?'receita':'despesa'}">${l.tipo==='entrada'?'entrada':'saída'}</span></td>
+      <td>${l.categoria||''}</td>
+      <td>${l.descricao||'—'}</td>
+      <td>${l.fielNome||'—'}</td>
+      <td class="num">${fmtBRL(l.valor)}</td>
+      <td>${editavel ? `<button class="btn btn-sm" data-edit="${l.id}">Editar</button>
+        <button class="btn btn-sm btn-danger" data-del="${l.id}">Excluir</button>` : ''}</td>
+    </tr>`).join('');
+  $('campLancTbody').querySelectorAll('[data-edit]').forEach(b=>{
+    b.addEventListener('click', ()=> abrirModalCampLanc(lancs.find(l=>l.id===b.dataset.edit)));
+  });
+  $('campLancTbody').querySelectorAll('[data-del]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      if(!confirm('Excluir este lançamento?')) return;
+      await deleteDoc(doc(db,'igrejas',state.igrejaAtualId,'campanhas',c.id,'lancamentos', b.dataset.del));
+      toast('Lançamento excluído.'); await carregarELancamentosCampanha();
+    });
+  });
+}
+
+function abrirModalCampLanc(l){
+  state.editandoCampLancId = l ? l.id : null;
+  $('modalCampLancTitulo').textContent = l ? 'Editar lançamento' : 'Novo lançamento';
+  $('campLancFormTipo').value = l ? l.tipo : 'entrada';
+  $('campLancFormCategoria').value = l?.categoria || '';
+  $('campLancFormData').value = l ? l.data : new Date().toISOString().slice(0,10);
+  $('campLancFormValor').value = l ? l.valor : '';
+  $('campLancFormDescricao').value = l?.descricao || '';
+  $('campLancFormFiel').value = l?.fielId || '';
+  $('campLancFormFielBusca').value = l?.fielNome || '';
+  $('campLancFormFielLista').classList.remove('active');
+  $('modalCampLanc').classList.add('active');
+}
+$('btnCancelarCampLanc').addEventListener('click', ()=> $('modalCampLanc').classList.remove('active'));
+$('btnSalvarCampLanc').addEventListener('click', async ()=>{
+  if(!validarObrigatorios([
+    {id:'campLancFormCategoria', nome:'Categoria'}, {id:'campLancFormData', nome:'Data'}, {id:'campLancFormValor', nome:'Valor'}
+  ])) return;
+  const valor = parseFloat($('campLancFormValor').value);
+  if(isNaN(valor) || valor <= 0){ $('campLancFormValor').classList.add('input-error'); toast('Informe um valor válido.', true); return; }
+  const c = state.campanhaAtualDados;
+  if(c.status !== 'ativa'){ toast('Essa campanha está encerrada — reabra antes de lançar.', true); return; }
+  const payload = {
+    tipo: $('campLancFormTipo').value,
+    categoria: $('campLancFormCategoria').value.trim(),
+    data: $('campLancFormData').value,
+    valor,
+    descricao: $('campLancFormDescricao').value.trim(),
+    fielId: $('campLancFormFiel').value || null,
+    fielNome: $('campLancFormFiel').value ? $('campLancFormFielBusca').value.trim() : '',
+  };
+  try{
+    if(state.editandoCampLancId){
+      await updateDoc(doc(db,'igrejas',state.igrejaAtualId,'campanhas',c.id,'lancamentos',state.editandoCampLancId), payload);
+    } else {
+      payload.criadoPor = state.user.uid; payload.criadoPorNome = state.perfil.nome; payload.criadoEm = serverTimestamp();
+      await addDoc(collection(db,'igrejas',state.igrejaAtualId,'campanhas',c.id,'lancamentos'), payload);
+    }
+    $('modalCampLanc').classList.remove('active');
+    toast('Lançamento salvo!');
+    await carregarELancamentosCampanha();
+  } catch(e){ toast('Erro ao salvar: '+e.message, true); }
+});
+
+async function toggleEncerrarCampanha(){
+  const c = state.campanhaAtualDados;
+  const novoStatus = c.status === 'ativa' ? 'encerrada' : 'ativa';
+  const msg = novoStatus === 'encerrada'
+    ? 'Encerrar esta campanha? Não será mais possível lançar nela até reabrir.'
+    : 'Reabrir esta campanha?';
+  if(!confirm(msg)) return;
+  await updateDoc(doc(db,'igrejas',state.igrejaAtualId,'campanhas',c.id), { status: novoStatus });
+  toast(novoStatus === 'encerrada' ? 'Campanha encerrada.' : 'Campanha reaberta.');
+  await renderCampanhaDetalhe();
+}
+
+async function gerarPdfCampanha(){
+  const c = state.campanhaAtualDados;
+  const btn = $('btnPdfCampanha');
+  btn.disabled = true; toast('Gerando PDF...');
+  try{
+    const snaps = await getDocs(collection(db,'igrejas',state.igrejaAtualId,'campanhas',c.id,'lancamentos'));
+    const lancs = snaps.docs.map(d=>({id:d.id, ...d.data()}));
+    const entradas = [...lancs.filter(l=>l.tipo==='entrada')].sort((a,b) => {
+      const na = (a.fielNome||'').trim(), nb = (b.fielNome||'').trim();
+      if(!na && !nb) return 0;
+      if(!na) return 1;
+      if(!nb) return -1;
+      return na.localeCompare(nb, 'pt-BR');
+    });
+    const saidas = lancs.filter(l=>l.tipo==='saida').sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+    const totalEntradas = entradas.reduce((s,l)=>s+l.valor,0);
+    const totalSaidas = saidas.reduce((s,l)=>s+l.valor,0);
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF();
+    const titulo = `CAMPANHA — ${c.nome.toUpperCase()}`;
+    let y = cabecalhoRelatorioPdf(pdf, titulo);
+
+    y = faixaTitulo(pdf, y, 'RELAÇÃO DE ENTRADAS');
+    const linhasEntradas = entradas.map((l,i)=>[i+1, l.fielNome||'—', l.categoria||'', formatarDataBR(l.data), fmtBRL(l.valor)]);
+    pdf.autoTable({
+      startY:y, head:[['N°','Nome','Categoria','Data','Valor']],
+      body: linhasEntradas.length ? linhasEntradas : [['—','Nenhuma entrada registrada','','','']],
+      theme:'grid', styles:{fontSize:7, cellPadding:1.3}, headStyles:{fillColor:[13,79,196], fontSize:7},
+      columnStyles:{4:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
+    });
+    y = pdf.lastAutoTable.finalY + 2;
+    y = garantirEspaco(pdf, y, 8.5, titulo);
+    y = faixaTotal(pdf, y, 'TOTAL DE ENTRADAS (R$)', totalEntradas, [200,230,210]);
+
+    y = garantirEspaco(pdf, y, 25, titulo);
+    y = faixaTitulo(pdf, y, 'RELAÇÃO DE SAÍDAS');
+    const linhasSaidas = saidas.map((l,i)=>[i+1, l.categoria||'', l.descricao||'', formatarDataBR(l.data), fmtBRL(l.valor)]);
+    pdf.autoTable({
+      startY:y, head:[['N°','Categoria','Descrição','Data','Valor']],
+      body: linhasSaidas.length ? linhasSaidas : [['—','Nenhuma saída registrada','','','']],
+      theme:'grid', styles:{fontSize:7, cellPadding:1.3}, headStyles:{fillColor:[199,63,63], fontSize:7},
+      columnStyles:{4:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
+    });
+    y = pdf.lastAutoTable.finalY + 2;
+    y = garantirEspaco(pdf, y, 8.5, titulo);
+    y = faixaTotal(pdf, y, 'TOTAL DE SAÍDAS (R$)', totalSaidas, [248,215,215]);
+    y = garantirEspaco(pdf, y, 8.5, titulo);
+    y = faixaTotal(pdf, y, 'SALDO DA CAMPANHA (R$)', totalEntradas-totalSaidas, [220,230,245]);
+
+    y = garantirEspaco(pdf, y, 19, titulo);
+    desenharAssinaturas(pdf, y + 10);
+
+    pdf.save(nomeArquivoPdf(`campanha_${nomeArquivoSeguro(c.nome)}`));
+    toast('PDF gerado!');
+  } catch(e){
+    console.error('Erro ao gerar PDF da campanha:', e);
+    toast('Erro ao gerar o PDF: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------- CAMPANHAS: EXPORTAR / IMPORTAR ----------
+$('btnExportarCampanhas').addEventListener('click', async ()=>{
+  if(!state.campanhas.length){ toast('Nenhuma campanha para exportar.', true); return; }
+  toast('Preparando exportação...');
+  const totaisEntrada = await Promise.all(state.campanhas.map(c => somarCampanha(c.id,'entrada')));
+  const totaisSaida = await Promise.all(state.campanhas.map(c => somarCampanha(c.id,'saida')));
+  const linhas = state.campanhas.map((c,i) => ({
+    Nome: c.nome, Tipo: labelTipoCampanha(c.tipo), Status: c.status==='ativa'?'Ativa':'Encerrada',
+    Responsável: c.responsavelNome || '', 'Data Início': c.dataInicio ? formatarDataBR(c.dataInicio) : '',
+    'Data Fim': c.dataFim ? formatarDataBR(c.dataFim) : '',
+    Meta: c.meta || '', 'Total Entradas': totaisEntrada[i], 'Total Saídas': totaisSaida[i],
+    Saldo: totaisEntrada[i]-totaisSaida[i],
+  }));
+  const ws = XLSX.utils.json_to_sheet(linhas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Campanhas');
+  XLSX.writeFile(wb, `campanhas_${nomeArquivoSeguro(igrejaAtual()?.nome)}.xlsx`);
+  toast('Exportado!');
+});
+
+async function exportarLancamentosCampanha(){
+  const c = state.campanhaAtualDados;
+  const snaps = await getDocs(collection(db,'igrejas',state.igrejaAtualId,'campanhas',c.id,'lancamentos'));
+  const lancs = snaps.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  if(!lancs.length){ toast('Nenhum lançamento para exportar.', true); return; }
+  const linhas = lancs.map(l => ({
+    Data: l.data ? formatarDataBR(l.data) : '', Tipo: l.tipo==='entrada'?'Entrada':'Saída',
+    Categoria: l.categoria||'', Descrição: l.descricao||'', Fiel: l.fielNome||'', Valor: l.valor,
+  }));
+  const ws = XLSX.utils.json_to_sheet(linhas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Lançamentos');
+  XLSX.writeFile(wb, `campanha_${nomeArquivoSeguro(c.nome)}.xlsx`);
+  toast('Exportado!');
+}
+
+function abrirModalImportarCampanha(){
+  $('importCampNome').textContent = state.campanhaAtualDados?.nome || '';
+  $('importCampLog').textContent = '';
+  $('importCampArquivo').value = '';
+  $('modalImportarCampanha').classList.add('active');
+}
+$('btnCancelarImportarCampanha').addEventListener('click', ()=> $('modalImportarCampanha').classList.remove('active'));
+
+$('btnBaixarModeloCampanha').addEventListener('click', ()=>{
+  const wb = XLSX.utils.book_new();
+  const instrucoes = [
+    ['Como preencher esta planilha'],
+    [''],
+    ['1. Uma linha por lançamento, na aba "lancamentos_campanha". Apague a linha de exemplo antes'],
+    ['   de importar de verdade.'],
+    ['2. "Tipo" deve ser exatamente "entrada" ou "saida" (sem acento).'],
+    ['3. "Data" deve estar em formato de data do Excel.'],
+    ['4. "Nome do Fiel" é opcional — se preencher, o app tenta achar um fiel já cadastrado com esse'],
+    ['   nome (sem diferenciar acento/maiúscula). Se não encontrar, guarda só o nome digitado, sem'],
+    ['   vincular ao cadastro.'],
+    ['5. "Categoria" é texto livre, ex: "Doação", "Venda de rifa nº 12", "Material de construção".'],
+    ['6. Os lançamentos importados entram direto na campanha que estiver aberta no momento do envio.'],
+  ];
+  const wsInstrucoes = XLSX.utils.aoa_to_sheet(instrucoes);
+  wsInstrucoes['!cols'] = [{wch: 100}];
+  XLSX.utils.book_append_sheet(wb, wsInstrucoes, 'Instruções');
+
+  const ws = XLSX.utils.json_to_sheet([
+    { Tipo:'entrada', Categoria:'Doação', Data: new Date(2025,0,10), Valor:100, 'Nome do Fiel':'João da Silva', Descrição:'' },
+    { Tipo:'saida', Categoria:'Material de construção', Data: new Date(2025,0,15), Valor:250, 'Nome do Fiel':'', Descrição:'Compra de cimento' },
+  ]);
+  ws['!cols'] = [{wch:10},{wch:26},{wch:14},{wch:10},{wch:22},{wch:26}];
+  XLSX.utils.book_append_sheet(wb, ws, 'lancamentos_campanha');
+
+  XLSX.writeFile(wb, 'modelo_importacao_campanha.xlsx');
+  toast('Modelo baixado!');
+});
+
+$('btnImportarCampanhaConfirmar').addEventListener('click', async ()=>{
+  const c = state.campanhaAtualDados;
+  const file = $('importCampArquivo').files[0];
+  if(!file){ toast('Selecione o arquivo .xlsx primeiro.', true); return; }
+  const btn = $('btnImportarCampanhaConfirmar');
+  btn.disabled = true; btn.textContent = 'Importando...';
+  $('importCampLog').textContent = '';
+  const logImportCamp = (msg) => {
+    const el = $('importCampLog'); el.textContent += msg + '\n'; el.scrollTop = el.scrollHeight;
+  };
+  try{
+    logImportCamp('Lendo planilha...');
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type:'array', cellDates:true });
+    const sheet = wb.Sheets['lancamentos_campanha'];
+    const linhasBrutas = sheet ? XLSX.utils.sheet_to_json(sheet, { defval: null }) : [];
+    const linhas = linhasBrutas.filter(l =>
+      l['Tipo'] && l['Data'] instanceof Date && typeof l['Valor'] === 'number' &&
+      ['entrada','saida'].includes((l['Tipo']||'').toString().trim().toLowerCase())
+    );
+    logImportCamp(`Encontrados ${linhas.length} lançamentos válidos na aba "lancamentos_campanha".`);
+    let total = 0;
+    for(const l of linhas){
+      const tipo = l['Tipo'].toString().trim().toLowerCase();
+      let fielId = null, fielNome = '';
+      const nomeDigitado = (l['Nome do Fiel']||'').toString().trim();
+      if(nomeDigitado){
+        const termo = normalizarTexto(nomeDigitado);
+        try{
+          const q = query(collection(db,'igrejas',state.igrejaAtualId,'membros'), orderBy('nomeBusca'), where('nomeBusca','>=',termo), where('nomeBusca','<=',termo+'\uf8ff'), limit(1));
+          const snap = await getDocs(q);
+          if(!snap.empty){ fielId = snap.docs[0].id; fielNome = snap.docs[0].data().nome; }
+          else fielNome = nomeDigitado;
+        } catch(e){ fielNome = nomeDigitado; }
+      }
+      await addDoc(collection(db,'igrejas',state.igrejaAtualId,'campanhas',c.id,'lancamentos'), {
+        tipo, categoria: (l['Categoria']||'').toString().trim(),
+        data: l['Data'].toISOString().slice(0,10), valor: l['Valor'],
+        descricao: (l['Descrição']||'').toString().trim(),
+        fielId, fielNome,
+        criadoPor: state.user.uid, criadoPorNome: state.perfil.nome, criadoEm: serverTimestamp(), importado: true,
+      });
+      total++;
+      if(total % 20 === 0) logImportCamp(`  ...${total} importados`);
+    }
+    logImportCamp(`\n✅ ${total} lançamentos importados com sucesso!`);
+    toast('Importação concluída!');
+    await carregarELancamentosCampanha();
+  } catch(e){
+    logImportCamp('\n❌ Erro: ' + e.message);
+    toast('Erro na importação — veja o log.', true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Iniciar importação';
+  }
+});
+
 // ---------- IGREJA ----------
 // Redimensiona a imagem no navegador (canvas) e devolve como base64 —
 // assim não precisamos do Firebase Storage (que exigiria plano pago) só
@@ -1215,6 +1709,9 @@ async function renderIgreja(){
   $('btnSalvarIgreja').style.display = editavel ? 'inline-flex' : 'none';
   $('btnRemoverLogo').style.display = editavel ? 'inline-flex' : 'none';
 }
+// Nome da igreja é sempre buscado "fresco" em igrejas/{id} no login (ver
+// carregarIgrejasDoUsuario) — por isso não precisamos mais propagar essa
+// mudança manualmente pra cada usuário aqui.
 $('btnSalvarIgreja').addEventListener('click', async ()=>{
   if(!validarObrigatorios([{id:'igNome', nome:'Nome da igreja'}])) return;
   const payload = {
@@ -1228,9 +1725,10 @@ $('btnSalvarIgreja').addEventListener('click', async ()=>{
   };
   try{
     await updateDoc(doc(db,'igrejas',state.igrejaAtualId), payload);
-    await updateDoc(doc(db,'membrosIndice', `${state.igrejaAtualId}_${state.user.uid}`), {
-      igrejaNome: payload.nome
-    });
+    // Ainda atualiza o próprio índice (não é mais estritamente necessário,
+    // já que agora buscamos o nome fresco a cada login, mas mantém o
+    // seletor de igreja já certo sem precisar recarregar a página).
+    await updateDoc(doc(db,'membrosIndice', `${state.igrejaAtualId}_${state.user.uid}`), { igrejaNome: payload.nome });
     state.igrejaDados = { ...state.igrejaDados, ...payload };
     aplicarLogoSidebar();
     toast('Dados da igreja atualizados!');
@@ -1259,8 +1757,15 @@ async function renderUsuarios(){
   $('usuariosTbody').querySelectorAll('[data-del]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       if(!confirm('Remover o acesso deste usuário a esta igreja?')) return;
-      await deleteDoc(doc(db,'igrejas',state.igrejaAtualId,'usuarios', b.dataset.del));
-      await deleteDoc(doc(db,'membrosIndice', `${state.igrejaAtualId}_${b.dataset.del}`));
+      const uidRemovido = b.dataset.del;
+      await deleteDoc(doc(db,'igrejas',state.igrejaAtualId,'usuarios', uidRemovido));
+      await deleteDoc(doc(db,'membrosIndice', `${state.igrejaAtualId}_${uidRemovido}`));
+      // Limpa também o registro de perfil (nome/e-mail) que não fica mais
+      // vinculado a nenhuma igreja — evita deixar sobra "escondida" no banco.
+      // Isso não afeta a conta de login da pessoa em si (ela continua
+      // existindo no Firebase — apagar isso de verdade exigiria um
+      // servidor próprio, que este app não usa).
+      try{ await deleteDoc(doc(db,'perfis', uidRemovido)); } catch(e){ /* ok se não der, é só um cache de nome */ }
       toast('Acesso removido.'); renderUsuarios();
     });
   });

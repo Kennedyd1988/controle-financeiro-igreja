@@ -203,6 +203,12 @@
   .tag.receita{background:var(--green-dim); color:var(--green);}
   .tag.despesa{background:var(--red-dim); color:var(--red);}
   .tag.locked{background:var(--amber-dim); color:var(--amber);}
+  .tag.ativa{background:var(--green-dim); color:var(--green);}
+  .tag.encerrada{background:var(--surface-2); color:var(--text-faint); border:1px solid var(--line);}
+  .campanha-card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:12px; cursor:pointer;}
+  .campanha-card:hover{border-color:var(--brand);}
+  .campanha-progress{height:8px; border-radius:99px; background:var(--surface-2); overflow:hidden; margin-top:10px;}
+  .campanha-progress-fill{height:100%; background:var(--brand); border-radius:99px;}
 
   .toolbar{display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap;}
   .toolbar select, .toolbar input{padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface); font-size:13px;}
@@ -263,6 +269,9 @@
         <button class="btn btn-primary" id="btnAuthSubmit">Entrar</button>
       </div>
       <div id="authError"></div>
+      <div class="auth-toggle">
+        <button id="btnEsqueciSenha" style="font-size:12.5px;">Esqueci minha senha</button>
+      </div>
       <div class="auth-toggle" id="authToggleWrap" style="display:none;">
         <span id="authToggleText">Ainda não tem conta?</span>
         <button id="btnAuthToggle">Criar conta</button>
@@ -292,6 +301,7 @@
       <button class="nav-btn" data-view="cadastros"><span class="nav-dot"></span>Categorias e Grupos</button>
       <button class="nav-btn" data-view="relatorios"><span class="nav-dot"></span>Relatórios</button>
       <button class="nav-btn" data-view="competencias"><span class="nav-dot"></span>Competências</button>
+      <button class="nav-btn" data-view="campanhas"><span class="nav-dot"></span>Campanhas</button>
       <button class="nav-btn" data-view="igreja"><span class="nav-dot"></span>Dados da Igreja</button>
       <button class="nav-btn" data-view="usuarios" id="navUsuarios" style="display:none;"><span class="nav-dot"></span>Usuários</button>
       <button class="nav-btn" data-view="importar" id="navImportar" style="display:none;"><span class="nav-dot"></span>Importar dados</button>
@@ -548,6 +558,75 @@
         </div>
       </section>
 
+      <!-- CAMPANHAS: LISTA -->
+      <section class="view" id="view-campanhas">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Campanhas</div>
+            <div class="view-desc">Arrecadações, vendas e projetos separados da tesouraria geral</div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn" id="btnExportarCampanhas">Exportar lista</button>
+            <button class="btn btn-primary" id="btnNovaCampanha">+ Nova campanha</button>
+          </div>
+        </div>
+        <div class="toolbar">
+          <select id="campanhasFiltroStatus">
+            <option value="ativa">Ativas</option>
+            <option value="encerrada">Encerradas</option>
+            <option value="">Todas</option>
+          </select>
+        </div>
+        <div id="campanhasLista"></div>
+        <div class="empty" id="campanhasEmpty" style="display:none;">Nenhuma campanha encontrada.</div>
+      </section>
+
+      <!-- CAMPANHAS: DETALHE -->
+      <section class="view" id="view-campanhaDetalhe">
+        <button class="btn btn-sm" id="btnVoltarCampanhas" style="margin-bottom:14px;">← Voltar para Campanhas</button>
+        <div class="view-header">
+          <div>
+            <div class="view-title" id="campDetNome">—</div>
+            <div class="view-desc" id="campDetDescricao"></div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn" id="btnExportarCampLanc">Exportar</button>
+            <button class="btn" id="btnImportarCampLanc">Importar planilha</button>
+            <button class="btn" id="btnPdfCampanha">⬇ PDF da campanha</button>
+            <button class="btn" id="btnEncerrarCampanha"></button>
+            <button class="btn btn-primary" id="btnNovoLancCampanha">+ Novo lançamento</button>
+          </div>
+        </div>
+        <div class="card" id="campDetProgressoCard" style="margin-bottom:14px; display:none;">
+          <div style="display:flex; justify-content:space-between; font-size:12.5px; color:var(--text-dim); margin-bottom:2px;">
+            <span>Arrecadado: <strong id="campDetArrecadado" style="color:var(--text);">R$ 0,00</strong></span>
+            <span>Meta: <strong id="campDetMeta" style="color:var(--text);">R$ 0,00</strong></span>
+          </div>
+          <div class="campanha-progress"><div class="campanha-progress-fill" id="campDetProgressoFill" style="width:0%;"></div></div>
+        </div>
+        <div class="card" id="campDetTotalizador" style="margin-bottom:14px; display:flex; gap:24px; flex-wrap:wrap;">
+          <div><div class="stat-label">Total de entradas</div><div class="stat-value green num" id="campDetTotalEntradas" style="font-size:18px;">R$ 0,00</div></div>
+          <div><div class="stat-label">Total de saídas</div><div class="stat-value red num" id="campDetTotalSaidas" style="font-size:18px;">R$ 0,00</div></div>
+          <div><div class="stat-label">Saldo</div><div class="stat-value num" id="campDetSaldo" style="font-size:18px;">R$ 0,00</div></div>
+        </div>
+        <div class="toolbar">
+          <select id="campLancTipoFiltro">
+            <option value="">Todos os tipos</option>
+            <option value="entrada">Entradas</option>
+            <option value="saida">Saídas</option>
+          </select>
+        </div>
+        <div class="card" style="padding:0;">
+          <div class="table-scroll">
+          <table>
+            <thead><tr><th>Data</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Fiel</th><th style="text-align:right;">Valor</th><th></th></tr></thead>
+            <tbody id="campLancTbody"></tbody>
+          </table>
+          </div>
+          <div class="empty" id="campLancEmpty" style="display:none;">Nenhum lançamento nessa campanha ainda.</div>
+        </div>
+      </section>
+
       <!-- IGREJA -->
       <section class="view" id="view-igreja">
         <div class="view-header">
@@ -799,6 +878,87 @@
       <div class="modal-actions">
         <button class="btn" id="btnCancelarEditarUsuario">Cancelar</button>
         <button class="btn btn-primary" id="btnSalvarEditarUsuario">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: nova/editar campanha -->
+  <div class="modal-backdrop" id="modalCampanha">
+    <div class="modal">
+      <h3 id="modalCampanhaTitulo">Nova campanha</h3>
+      <div class="field"><label>Nome<span class="req">*</span></label><input type="text" id="campFormNome" required></div>
+      <div class="field"><label>Descrição</label><input type="text" id="campFormDescricao" placeholder="Opcional"></div>
+      <div class="field">
+        <label>Tipo</label>
+        <select id="campFormTipo">
+          <option value="arrecadacao">Arrecadação</option>
+          <option value="venda">Venda de algo</option>
+          <option value="compra">Compra coletiva</option>
+          <option value="outro">Outro</option>
+        </select>
+      </div>
+      <div class="field"><label>Meta financeira (opcional)</label><input type="number" step="0.01" id="campFormMeta" placeholder="Deixe em branco se não tiver meta fixa"></div>
+      <div class="field" style="position:relative;">
+        <label>Responsável (opcional)</label>
+        <input type="text" id="campFormResponsavelBusca" placeholder="Buscar fiel por nome..." autocomplete="off">
+        <input type="hidden" id="campFormResponsavelId">
+        <div class="combo-lista" id="campFormResponsavelLista"></div>
+      </div>
+      <div class="grid grid-2">
+        <div class="field"><label>Data de início<span class="req">*</span></label><input type="date" id="campFormDataInicio" required></div>
+        <div class="field"><label>Data prevista de encerramento (opcional)</label><input type="date" id="campFormDataFim"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="btnCancelarCampanha">Cancelar</button>
+        <button class="btn btn-primary" id="btnSalvarCampanha">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: novo/editar lançamento de campanha -->
+  <div class="modal-backdrop" id="modalCampLanc">
+    <div class="modal">
+      <h3 id="modalCampLancTitulo">Novo lançamento</h3>
+      <div class="field">
+        <label>Tipo</label>
+        <select id="campLancFormTipo">
+          <option value="entrada">Entrada</option>
+          <option value="saida">Saída</option>
+        </select>
+      </div>
+      <div class="field"><label>Categoria<span class="req">*</span></label><input type="text" id="campLancFormCategoria" placeholder="Ex: Doação, Venda de rifa, Material" required></div>
+      <div class="field"><label>Data<span class="req">*</span></label><input type="date" id="campLancFormData" required></div>
+      <div class="field"><label>Valor (R$)<span class="req">*</span></label><input type="number" step="0.01" id="campLancFormValor" placeholder="0,00" required></div>
+      <div class="field" style="position:relative;" id="campLancFormFielWrap">
+        <label>Fiel (opcional)</label>
+        <input type="text" id="campLancFormFielBusca" placeholder="Digite para buscar..." autocomplete="off">
+        <input type="hidden" id="campLancFormFiel">
+        <div class="combo-lista" id="campLancFormFielLista"></div>
+      </div>
+      <div class="field"><label>Descrição</label><input type="text" id="campLancFormDescricao" placeholder="Opcional"></div>
+      <div class="modal-actions">
+        <button class="btn" id="btnCancelarCampLanc">Cancelar</button>
+        <button class="btn btn-primary" id="btnSalvarCampLanc">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: importar lançamentos de campanha via planilha -->
+  <div class="modal-backdrop" id="modalImportarCampanha">
+    <div class="modal">
+      <h3>Importar lançamentos por planilha</h3>
+      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:14px;">
+        Importa lançamentos direto pra dentro de <strong id="importCampNome"></strong>. Baixe o
+        modelo, preencha e envie de volta.
+      </p>
+      <button class="btn" id="btnBaixarModeloCampanha" style="margin-bottom:16px;">⬇ Baixar modelo de planilha</button>
+      <div class="field"><label>Arquivo da planilha (.xlsx)</label><input type="file" id="importCampArquivo" accept=".xlsx"></div>
+      <div class="modal-actions">
+        <button class="btn" id="btnCancelarImportarCampanha">Cancelar</button>
+        <button class="btn btn-primary" id="btnImportarCampanhaConfirmar">Iniciar importação</button>
+      </div>
+      <div style="margin-top:16px;">
+        <pre id="importCampLog" style="background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:12px; font-size:12px; max-height:240px; overflow-y:auto; white-space:pre-wrap; font-family:'IBM Plex Mono',monospace;"></pre>
       </div>
     </div>
   </div>

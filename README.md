@@ -141,6 +141,70 @@ Cada lançamento agora tem dois campos de tempo separados:
 Por padrão, a competência acompanha a data escolhida — mas dá pra mudar
 manualmente, por exemplo quando um dízimo de junho é pago só em julho.
 
+## Exportar/Importar em Campanhas
+- **Exportar lista** (tela Campanhas): planilha com todas as campanhas —
+  nome, tipo, status, responsável, datas, meta, total arrecadado/gasto e saldo
+- **Exportar** (dentro de uma campanha): planilha com os lançamentos
+  daquela campanha específica
+- **Importar planilha** (dentro de uma campanha, só Admin, só com a
+  campanha ativa): clique em **"Baixar modelo de planilha"** pra pegar o
+  arquivo certo (com aba de instruções), preencha, e envie de volta em
+  "Importar planilha". Os lançamentos entram direto na campanha que
+  estiver aberta. Se preencher "Nome do Fiel", o app tenta achar
+  automaticamente um fiel já cadastrado com esse nome (sem diferenciar
+  acento/maiúscula); se não achar, guarda só o nome digitado, sem vínculo.
+
+## Módulo de Campanhas (novo!)
+Nova aba **Campanhas**, 100% separada da tesouraria geral (não entra no
+saldo anterior nem nos relatórios da igreja — como combinamos).
+
+**Lista de campanhas**: cards com nome, tipo (Arrecadação / Venda de algo /
+Compra coletiva / Outro), status (Ativa/Encerrada), responsável, e barra de
+progresso quando tem meta financeira definida. Filtro por status.
+
+**Dentro de uma campanha**: totais de entrada/saída/saldo, barra de
+progresso da meta, lançamentos com Tipo, Categoria (texto livre — "Doação",
+"Venda de rifa nº 12", "Material de construção"...), Data, Valor,
+Descrição e Fiel (opcional, com a mesma busca inteligente de sempre).
+
+**Encerrar campanha**: trava novos lançamentos (igual o bloqueio de
+competência) — dá pra reabrir se precisar. Só Admin/Cadastrador com acesso
+à aba Campanhas conseguem encerrar/reabrir.
+
+**Exportar PDF**: relação de entradas (ordem alfabética por fiel) + relação
+de saídas (por data) + totais + saldo final + assinatura de Pastor/Tesoureiro
+— mesmo estilo dos outros relatórios.
+
+**Excluir campanha**: só é permitido se ela ainda não tiver nenhum
+lançamento (evita perder histórico por engano).
+
+**Permissões**: "Campanhas" entrou na lista de abas configuráveis por
+usuário (Usuários → Cadastrar/Editar) — dá pra liberar só pra quem
+realmente cuida dos projetos da igreja, sem dar acesso à tesouraria geral.
+
+## Limpeza de usuários removidos, senha esquecida, e nome da igreja sempre atualizado
+
+**Exclusão de usuário mais completa**: ao remover o acesso de alguém, o app
+agora também apaga o registro de perfil (nome/e-mail) que ficava
+"escondido" depois que a pessoa perdia acesso a todas as igrejas. Uma
+ressalva honesta: isso **não** apaga a conta de login da pessoa no
+Firebase — tecnicamente, ela ainda existiria (e-mail/senha), mas sem
+nenhum acesso a nenhuma igreja, o que na prática equivale a não ter conta
+nenhuma. Apagar a conta de login de verdade exigiria um servidor próprio
+(Cloud Function do Firebase), que este app não usa hoje — posso implementar
+se um dia isso for importante (envolve ativar o plano pago do Firebase,
+sem custo real dentro do uso esperado, mas com cartão cadastrado).
+
+**"Esqueci minha senha"**: novo link na tela de login. A pessoa informa o
+e-mail e recebe uma mensagem de redefinição — mesmo mecanismo já usado em
+"Editar usuário", só que agora acessível pra quem nem consegue entrar.
+
+**Nome da igreja sempre atualizado pra todo mundo**: em vez de "copiar" o
+nome da igreja pra cada usuário e depender de alguém atualizar essa cópia,
+o app agora busca o nome **direto e na hora** sempre que alguém entra —
+então qualquer alteração feita por um admin já aparece certa pra todos os
+outros usuários, sem esperar nada.
+
 ## Revisão: quebra de página automática nos PDFs
 Conferi os três relatórios em PDF (mensal, anual, do fiel). As tabelas em si
 (receitas, ofertas, despesas, extrato) já pulavam de página sozinhas
