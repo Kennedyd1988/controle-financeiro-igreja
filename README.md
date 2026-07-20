@@ -141,6 +141,30 @@ Cada lançamento agora tem dois campos de tempo separados:
 Por padrão, a competência acompanha a data escolhida — mas dá pra mudar
 manualmente, por exemplo quando um dízimo de junho é pago só em julho.
 
+## Filtros de Lançamentos
+A tela de Lançamentos agora filtra por **Competência** (mês/ano), **Tipo**
+(receita/despesa), **Categoria** e **Fiel** — todos combináveis ao mesmo
+tempo. O botão "Exportar" respeita os mesmos filtros ativos na tela. Um
+botão **"Limpar filtros"** volta tudo pro mês atual, sem nenhum filtro extra.
+
+## Revisão de campos entre formulários, importação e exportação
+Conferência completa pra garantir que nada fica "escondido" numa importação:
+- Adicionado o campo **RG** ao formulário de Fiéis e à exportação em Excel
+  (a planilha antiga já trazia esse dado, mas o app não tinha onde mostrar)
+- A importação agora vincula **Pastor e Tesoureiro ao cadastro do fiel de
+  verdade** (antes só trazia o nome como texto solto, sem o vínculo que
+  alimenta a assinatura automática dos PDFs)
+- Nova coluna opcional **"Nome para Relatório"** na aba `cad_igreja` do
+  modelo — se não preencher, o app usa o mesmo nome do campo "Igreja"
+- A logo da igreja não é importável por planilha (é imagem) — segue sendo
+  enviada manualmente em Dados da Igreja, depois da importação
+
+**Sobre o ID da planilha**: pode ser qualquer texto ou número, desde que o
+mesmo valor seja usado nas duas pontas (ex: o ID do fiel em `cad_fieis`
+precisa ser idêntico ao valor usado em "Nome do Fiel" de `lanc_receita`).
+Recomendação: formate a coluna ID como **Texto** no Excel, para não perder
+zeros à esquerda se usar IDs numéricos.
+
 ## Cadastro direto de usuário (sem e-mail)
 O app nunca chegou a enviar e-mails de verdade — o antigo "convite" só
 liberava o acesso quando a pessoa entrava com aquele e-mail específico, o
