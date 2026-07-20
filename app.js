@@ -1578,54 +1578,55 @@ function cabecalhoRelatorioPdf(pdf, tituloBarra){
   const logo = state.igrejaDados.logo;
   let x = 14;
   if(logo){
-    try{ pdf.addImage(logo, 'JPEG', 14, 8, 20, 20); x = 38; } catch(e){ /* segue sem logo */ }
+    try{ pdf.addImage(logo, 'JPEG', 14, 6, 16, 16); x = 34; } catch(e){ /* segue sem logo */ }
   }
-  pdf.setFontSize(12); pdf.setFont(undefined,'bold'); pdf.setTextColor(13,79,196);
-  pdf.text('RELATÓRIO FINANCEIRO DA IGREJA', x, 15);
-  pdf.setFontSize(9); pdf.setFont(undefined,'normal'); pdf.setTextColor(180,120,20);
-  pdf.text('Departamento de Tesouraria', x, 21);
+  pdf.setFontSize(11); pdf.setFont(undefined,'bold'); pdf.setTextColor(13,79,196);
+  pdf.text('RELATÓRIO FINANCEIRO DA IGREJA', x, 12);
+  pdf.setFontSize(8); pdf.setFont(undefined,'normal'); pdf.setTextColor(180,120,20);
+  pdf.text('Departamento de Tesouraria', x, 17);
   pdf.setTextColor(0);
 
   pdf.setFillColor(13,79,196);
-  pdf.rect(14, 30, 182, 8, 'F');
-  pdf.setTextColor(255); pdf.setFontSize(10); pdf.setFont(undefined,'bold');
-  pdf.text(nomeCabecalhoRelatorio(), 105, 35.5, { align:'center' });
+  pdf.rect(14, 24, 182, 6.5, 'F');
+  pdf.setTextColor(255); pdf.setFontSize(9.5); pdf.setFont(undefined,'bold');
+  pdf.text(nomeCabecalhoRelatorio(), 105, 28.6, { align:'center' });
 
   pdf.setFillColor(230,238,252);
-  pdf.rect(14, 38, 182, 7, 'F');
-  pdf.setFontSize(10); pdf.setTextColor(13,79,196);
-  pdf.text(tituloBarra, 105, 43, { align:'center' });
+  pdf.rect(14, 31, 182, 6, 'F');
+  pdf.setFontSize(9); pdf.setTextColor(13,79,196);
+  pdf.text(tituloBarra, 105, 35.3, { align:'center' });
   pdf.setTextColor(0); pdf.setFont(undefined,'normal');
-  return 52;
+  return 40;
 }
 function faixaTitulo(pdf, y, texto){
   pdf.setFillColor(30,41,59);
-  pdf.rect(14, y, 182, 7, 'F');
-  pdf.setTextColor(255); pdf.setFontSize(9.5); pdf.setFont(undefined,'bold');
-  pdf.text(texto, 105, y+5, { align:'center' });
+  pdf.rect(14, y, 182, 6, 'F');
+  pdf.setTextColor(255); pdf.setFontSize(9); pdf.setFont(undefined,'bold');
+  pdf.text(texto, 105, y+4.3, { align:'center' });
   pdf.setTextColor(0); pdf.setFont(undefined,'normal');
-  return y + 7;
+  return y + 6;
 }
 function faixaTotal(pdf, y, texto, valor, cor){
   pdf.setFillColor(...(cor||[220,235,245]));
-  pdf.rect(14, y, 182, 7, 'F');
-  pdf.setFontSize(9.5); pdf.setFont(undefined,'bold');
-  pdf.text(texto, 18, y+5);
-  pdf.text(fmtBRL(valor), 192, y+5, { align:'right' });
+  pdf.rect(14, y, 182, 6, 'F');
+  pdf.setFontSize(9); pdf.setFont(undefined,'bold');
+  pdf.text(texto, 18, y+4.3);
+  pdf.text(fmtBRL(valor), 192, y+4.3, { align:'right' });
   pdf.setFont(undefined,'normal');
-  return y + 11;
+  return y + 8.5;
 }
 function desenharAssinaturas(pdf, y){
   const pastor = state.igrejaDados.pastor || '';
   const tesoureiro = state.igrejaDados.tesoureiro || '';
-  pdf.setFontSize(9);
+  pdf.setFontSize(8.5);
   pdf.setDrawColor(0);
   pdf.line(30, y, 90, y);
   pdf.line(120, y, 180, y);
-  pdf.text(pastor || '—', 60, y+5, { align:'center' });
-  pdf.text('Pastor', 60, y+10, { align:'center' });
-  pdf.text(tesoureiro || '—', 150, y+5, { align:'center' });
-  pdf.text('Tesoureiro', 150, y+10, { align:'center' });
+  pdf.text(pastor || '—', 60, y+4.5, { align:'center' });
+  pdf.text('Pastor', 60, y+9, { align:'center' });
+  pdf.text(tesoureiro || '—', 150, y+4.5, { align:'center' });
+  pdf.text('Tesoureiro', 150, y+9, { align:'center' });
+  return y + 9;
 }
 // Soma tudo o que aconteceu ANTES da data informada (para o "saldo anterior")
 // Soma tudo o que aconteceu ANTES da data informada (para o "saldo
@@ -1668,26 +1669,27 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
 
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF();
+    const tituloPeriodo = `RELATÓRIO DO MÊS DE ${MESES[mes-1].toUpperCase()} DE ${ano}`;
 
     // ---- PÁGINA 1: dizimistas + ofertas ----
-    let y = cabecalhoRelatorioPdf(pdf, `RELATÓRIO DO MÊS DE ${MESES[mes-1].toUpperCase()} DE ${ano}`);
+    let y = cabecalhoRelatorioPdf(pdf, tituloPeriodo);
     y = faixaTitulo(pdf, y, 'RELAÇÃO DE DIZIMISTAS E SEUS VALORES');
 
     const linhasDizimos = dizimos.map((l,i) => [i+1, l.membroNome||'—', formatarDataBR(l.dataStr), fmtBRL(l.valor)]);
     if(linhasDizimos.length){
       const metade = Math.ceil(linhasDizimos.length/2);
       const colEsq = linhasDizimos.slice(0, metade), colDir = linhasDizimos.slice(metade);
-      const opcoes = { head:[['N°','Nome','Data','Valor']], theme:'grid', styles:{fontSize:7, cellPadding:1.5}, headStyles:{fillColor:[13,79,196], fontSize:7} };
-      pdf.autoTable({ ...opcoes, startY:y, body:colEsq, margin:{left:14, right:106} });
+      const opcoes = { head:[['N°','Nome','Data','Valor']], theme:'grid', styles:{fontSize:6.5, cellPadding:1}, headStyles:{fillColor:[13,79,196], fontSize:6.5}, margin:{bottom:12} };
+      pdf.autoTable({ ...opcoes, startY:y, body:colEsq, margin:{...opcoes.margin, left:14, right:106} });
       let y1 = pdf.lastAutoTable.finalY;
       let y2 = y1;
       if(colDir.length){
-        pdf.autoTable({ ...opcoes, startY:y, body:colDir, margin:{left:106, right:14} });
+        pdf.autoTable({ ...opcoes, startY:y, body:colDir, margin:{...opcoes.margin, left:106, right:14} });
         y2 = pdf.lastAutoTable.finalY;
       }
-      y = Math.max(y1,y2) + 3;
+      y = Math.max(y1,y2) + 2;
     } else {
-      pdf.setFontSize(9); pdf.text('Nenhum dízimo registrado neste mês.', 14, y+5); y += 10;
+      pdf.setFontSize(8); pdf.text('Nenhum dízimo registrado neste mês.', 14, y+5); y += 9;
     }
     y = faixaTotal(pdf, y, 'TOTAL DE DÍZIMOS (R$)', totalDizimos);
 
@@ -1698,26 +1700,32 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
     pdf.autoTable({
       startY:y, head:[['N°','Nome do ofertante','Tipo de oferta','Data','Valor']],
       body: linhasOfertas.length ? linhasOfertas : [['—','Nenhuma oferta registrada neste mês.','','','']],
-      theme:'grid', styles:{fontSize:7.5, cellPadding:1.8}, headStyles:{fillColor:[13,79,196], fontSize:7.5}, margin:{left:14,right:14}
+      theme:'grid', styles:{fontSize:6.5, cellPadding:1.2}, headStyles:{fillColor:[13,79,196], fontSize:6.5}, margin:{left:14,right:14,bottom:12}
     });
-    y = pdf.lastAutoTable.finalY + 3;
+    y = pdf.lastAutoTable.finalY + 2;
     y = faixaTotal(pdf, y, 'TOTAL DE OFERTAS (R$)', totalOfertas);
     y = faixaTotal(pdf, y, 'TOTAL DE ENTRADAS DO MÊS (R$)', totalEntradas, [200,230,210]);
 
-    if(y > 250) { pdf.addPage(); y = 20; }
-    desenharAssinaturas(pdf, y + 15);
+    // Só abre página nova pra assinatura se realmente não couber (raro,
+    // meses com volume bem fora do comum) — refaz o cabeçalho pra não
+    // deixar uma página "solta" sem contexto.
+    if(y + 9 > 283){ pdf.addPage(); y = cabecalhoRelatorioPdf(pdf, tituloPeriodo); }
+    y = desenharAssinaturas(pdf, y + 10);
 
-    // ---- PÁGINA 2: despesas + balanço final ----
+    // ---- PÁGINA(S) SEGUINTE(S): despesas + balanço final ----
+    // Sempre em página própria, para manter a separação clara do modelo —
+    // mas só isso; o conteúdo em si já está compacto o bastante para caber
+    // numa única página em qualquer mês de volume normal.
     pdf.addPage();
-    y = cabecalhoRelatorioPdf(pdf, `RELATÓRIO DO MÊS DE ${MESES[mes-1].toUpperCase()} DE ${ano}`);
+    y = cabecalhoRelatorioPdf(pdf, tituloPeriodo);
     y = faixaTitulo(pdf, y, 'RELAÇÃO DE DESPESAS');
     const linhasDespesas = despesas.map((l,i) => [i+1, [l.categoriaNome, l.descricao].filter(Boolean).join(' - '), formatarDataBR(l.dataStr), fmtBRL(l.valor)]);
     pdf.autoTable({
       startY:y, head:[['N°','Descrição da despesa','Data','Valor (R$)']],
       body: linhasDespesas.length ? linhasDespesas : [['—','Nenhuma despesa registrada neste mês.','','']],
-      theme:'grid', styles:{fontSize:7.5, cellPadding:1.8}, headStyles:{fillColor:[199,63,63], fontSize:7.5}, margin:{left:14,right:14}
+      theme:'grid', styles:{fontSize:6.5, cellPadding:1.2}, headStyles:{fillColor:[199,63,63], fontSize:6.5}, margin:{left:14,right:14,bottom:12}
     });
-    y = pdf.lastAutoTable.finalY + 3;
+    y = pdf.lastAutoTable.finalY + 2;
     y = faixaTotal(pdf, y, 'TOTAL DE DESPESAS (R$)', totalSaidas, [248,215,215]);
 
     y = faixaTitulo(pdf, y, 'BALANÇO FINAL');
@@ -1731,11 +1739,12 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
       ['Saldo para o próximo mês', fmtBRL(saldoAnterior + saldoMes)],
     ];
     pdf.autoTable({
-      startY:y, body: linhasBalanco, theme:'grid', styles:{fontSize:9, cellPadding:2.5},
-      columnStyles:{0:{fontStyle:'bold'}, 1:{halign:'right'}}, margin:{left:14,right:14},
+      startY:y, body: linhasBalanco, theme:'grid', styles:{fontSize:8.5, cellPadding:2}, margin:{bottom:12},
+      columnStyles:{0:{fontStyle:'bold'}, 1:{halign:'right'}},
       didParseCell: (data)=>{ if(data.row.index === linhasBalanco.length-1) data.row.cells[0].styles.fillColor = data.row.cells[1].styles.fillColor = [210,235,215]; }
     });
-    y = pdf.lastAutoTable.finalY + 15;
+    y = pdf.lastAutoTable.finalY + 10;
+    if(y + 9 > 283){ pdf.addPage(); y = cabecalhoRelatorioPdf(pdf, tituloPeriodo) + 10; }
     desenharAssinaturas(pdf, y);
 
     pdf.save(nomeArquivoPdf(`relatorio_mensal_${MESES[mes-1]}_${ano}`));
