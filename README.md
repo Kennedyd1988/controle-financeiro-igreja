@@ -141,6 +141,25 @@ Cada lançamento agora tem dois campos de tempo separados:
 Por padrão, a competência acompanha a data escolhida — mas dá pra mudar
 manualmente, por exemplo quando um dízimo de junho é pago só em julho.
 
+## Banner próprio de "Instalar app"
+O Chrome, sozinho, só oferece a instalação escondida num menu (ícone
+discreto na barra de endereço, ou dentro do menu ⋮ no celular) — a maioria
+das pessoas nunca percebe que dá pra instalar. Agora, quando o navegador
+sinaliza que o app pode ser instalado, aparece um banner no canto da tela
+com **"Instalar o SOFT+"** e um botão — bem mais visível.
+
+- Se a pessoa clicar em **"Instalar"**, abre a caixa de confirmação nativa
+  do próprio navegador
+- Se clicar no **"×"** (fechar), o banner não aparece mais pra ela
+  (fica guardado no navegador dela, não incomoda de novo)
+- Se o app já estiver instalado, o banner nunca aparece
+
+⚠️ No **iPhone/iPad (Safari)**, esse banner não aparece — a Apple não deixa
+navegadores acionarem esse convite automaticamente lá. Nesses aparelhos, a
+instalação continua sendo manual: Compartilhar → "Adicionar à Tela de
+Início". Posso adicionar uma dica na tela pra usuários de iPhone se
+for importante pro seu público.
+
 ## Logo oficial do SOFT+
 Troquei o "S+" genérico que eu tinha desenhado (só um placeholder) pela
 logo de verdade que vocês me mandaram — aparece agora na tela de login, no

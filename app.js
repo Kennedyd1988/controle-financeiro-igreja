@@ -2609,3 +2609,43 @@ if('serviceWorker' in navigator){
     navigator.serviceWorker.register('./sw.js').catch(()=>{ /* offline na primeira visita, sem problema */ });
   });
 }
+
+// ---------- PWA: banner próprio de "Instalar app" ----------
+// O Chrome, sozinho, só oferece a instalação escondida num menu — aqui a
+// gente escuta o evento que ele dispara quando o app É instalável e mostra
+// um convite visível, com botão. Não aparece de novo na mesma sessão se a
+// pessoa fechar, e não aparece nunca mais se ela recusar de vez.
+let promptInstalacaoEvento = null;
+const CHAVE_DISMISS_INSTALL = 'softplus_install_dismissed';
+
+function appJaInstalado(){
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  promptInstalacaoEvento = e;
+  if(appJaInstalado()) return;
+  let jaRecusou = false;
+  try{ jaRecusou = localStorage.getItem(CHAVE_DISMISS_INSTALL) === '1'; } catch(err){ /* localStorage bloqueado, tudo bem */ }
+  if(jaRecusou) return;
+  $('instalarBanner').classList.add('active');
+});
+
+$('btnInstalarApp').addEventListener('click', async () => {
+  $('instalarBanner').classList.remove('active');
+  if(!promptInstalacaoEvento) return;
+  promptInstalacaoEvento.prompt();
+  await promptInstalacaoEvento.userChoice;
+  promptInstalacaoEvento = null;
+});
+
+$('btnFecharInstalarBanner').addEventListener('click', () => {
+  $('instalarBanner').classList.remove('active');
+  try{ localStorage.setItem(CHAVE_DISMISS_INSTALL, '1'); } catch(err){ /* sem problema se não der pra guardar */ }
+});
+
+window.addEventListener('appinstalled', () => {
+  $('instalarBanner').classList.remove('active');
+  try{ localStorage.setItem(CHAVE_DISMISS_INSTALL, '1'); } catch(err){ /* sem problema se não der pra guardar */ }
+});

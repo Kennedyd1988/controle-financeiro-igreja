@@ -4,7 +4,7 @@
 // pro GitHub apareça sozinha na próxima vez que o app abrir com conexão,
 // sem precisar desinstalar nada.
 
-const CACHE_NAME = 'softplus-cache-v2';
+const CACHE_NAME = 'softplus-cache-v3';
 const ARQUIVOS_BASE = [
   './',
   './index.html',
