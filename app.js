@@ -503,13 +503,35 @@ async function ultimosLancamentosDoMes(mes, ano, qtde){
 const LANC_POR_PAGINA = 50;
 let lancInit = false;
 
+// Lê o estado atual de todos os filtros da tela de Lançamentos.
+function filtrosAtivosLancamentos(){
+  return {
+    mes: parseInt($('lancMes').value),
+    ano: parseInt($('lancAno').value),
+    tipo: $('lancTipo').value,
+    categoriaId: $('lancCategoriaFiltro').value,
+    membroId: $('lancFielFiltro').value,
+  };
+}
+function popularCategoriaFiltroLancamentos(){
+  const sel = $('lancCategoriaFiltro');
+  const atual = sel.value;
+  const opts = [
+    ...state.categoriasReceita.map(c => ({ id:c.id, label:`${c.nome} (Receita)` })),
+    ...state.categoriasDespesa.map(c => ({ id:c.id, label:`${c.nome} (Despesa)` })),
+  ];
+  sel.innerHTML = '<option value="">Todas as categorias</option>' +
+    opts.map(o => `<option value="${o.id}">${o.label}</option>`).join('');
+  if(opts.some(o => o.id === atual)) sel.value = atual;
+}
 async function buscarLancamentosPagina(reiniciar){
   const id = state.igrejaAtualId;
   if(reiniciar){ state.lancPagina = []; state.lancCursor = null; state.lancTemMais = false; }
-  const mes = parseInt($('lancMes').value), ano = parseInt($('lancAno').value);
-  const tipoFiltro = $('lancTipo').value;
-  const filtros = [where('mes','==',mes), where('ano','==',ano)];
-  if(tipoFiltro) filtros.push(where('tipo','==',tipoFiltro));
+  const f = filtrosAtivosLancamentos();
+  const filtros = [where('mes','==',f.mes), where('ano','==',f.ano)];
+  if(f.tipo) filtros.push(where('tipo','==',f.tipo));
+  if(f.categoriaId) filtros.push(where('categoriaId','==',f.categoriaId));
+  if(f.membroId) filtros.push(where('membroId','==',f.membroId));
   try{
     const cursorArg = state.lancCursor ? [startAfter(state.lancCursor)] : [];
     const q = query(collection(db,'igrejas',id,'lancamentos'), ...filtros, orderBy('dataStr','desc'), ...cursorArg, limit(LANC_POR_PAGINA));
@@ -519,11 +541,13 @@ async function buscarLancamentosPagina(reiniciar){
     if(snaps.docs.length) state.lancCursor = snaps.docs[snaps.docs.length-1];
     state.lancTemMais = snaps.docs.length === LANC_POR_PAGINA;
   } catch(e){
-    // Provavelmente falta o índice composto (mes+ano[+tipo]+dataStr) — usa
-    // a busca completa do mês como respaldo, igual ao comportamento anterior.
+    // Provavelmente falta o índice composto (mes+ano+...+dataStr) — usa
+    // a busca completa do mês como respaldo, filtrando o resto na hora.
     console.warn('Paginação de lançamentos indisponível, buscando o mês inteiro:', e.message);
-    let todos = await buscarLancamentos(mes, ano);
-    if(tipoFiltro) todos = todos.filter(l=>l.tipo===tipoFiltro);
+    let todos = await buscarLancamentos(f.mes, f.ano);
+    if(f.tipo) todos = todos.filter(l=>l.tipo===f.tipo);
+    if(f.categoriaId) todos = todos.filter(l=>l.categoriaId===f.categoriaId);
+    if(f.membroId) todos = todos.filter(l=>l.membroId===f.membroId);
     todos.sort((a,b)=> (b.dataStr||'').localeCompare(a.dataStr||''));
     state.lancPagina = todos;
     state.lancTemMais = false;
@@ -537,19 +561,42 @@ async function renderLancamentos(){
     $('lancMes').addEventListener('change', reiniciarERecarregar);
     $('lancAno').addEventListener('change', reiniciarERecarregar);
     $('lancTipo').addEventListener('change', reiniciarERecarregar);
+    $('lancCategoriaFiltro').addEventListener('change', reiniciarERecarregar);
+    $('lancFielFiltroBusca').addEventListener('input', ()=>{ if(!$('lancFielFiltroBusca').value.trim()) reiniciarERecarregar(); });
+    configurarComboboxFiel('lancFielFiltroBusca', 'lancFielFiltro', 'lancFielFiltroLista', reiniciarERecarregar);
+    $('btnLimparFiltrosLanc').addEventListener('click', ()=>{
+      $('lancMes').value = hoje.getMonth()+1; $('lancAno').value = hoje.getFullYear();
+      $('lancTipo').value = ''; $('lancCategoriaFiltro').value = '';
+      $('lancFielFiltroBusca').value = ''; $('lancFielFiltro').value = '';
+      reiniciarERecarregar();
+    });
     $('btnLancMais').addEventListener('click', async ()=>{ await buscarLancamentosPagina(false); desenharTabelaLancamentos(); });
   }
+  popularCategoriaFiltroLancamentos();
   await buscarLancamentosPagina(true);
   desenharTabelaLancamentos();
   atualizarTotalizadorLancamentos();
 }
-// Soma o período inteiro filtrado (não só a página carregada na tela).
+// Soma o período/filtro inteiro (não só a página carregada na tela).
+async function somarLancamentosFiltrado(f, tipo){
+  const id = state.igrejaAtualId;
+  const filtros = [where('mes','==',f.mes), where('ano','==',f.ano), where('tipo','==',tipo)];
+  if(f.categoriaId) filtros.push(where('categoriaId','==',f.categoriaId));
+  if(f.membroId) filtros.push(where('membroId','==',f.membroId));
+  const q = query(collection(db,'igrejas',id,'lancamentos'), ...filtros);
+  try{
+    const snap = await getAggregateFromServer(q, { total: sum('valor') });
+    return snap.data().total || 0;
+  } catch(e){
+    const docs = await getDocs(q);
+    return docs.docs.reduce((s,d)=> s + (d.data().valor||0), 0);
+  }
+}
 async function atualizarTotalizadorLancamentos(){
-  const mes = parseInt($('lancMes').value), ano = parseInt($('lancAno').value);
-  const tipoFiltro = $('lancTipo').value;
+  const f = filtrosAtivosLancamentos();
   const [receitas, despesas] = await Promise.all([
-    tipoFiltro === 'despesa' ? 0 : somarLancamentos(mes, ano, 'receita'),
-    tipoFiltro === 'receita' ? 0 : somarLancamentos(mes, ano, 'despesa'),
+    f.tipo === 'despesa' ? 0 : somarLancamentosFiltrado(f, 'receita'),
+    f.tipo === 'receita' ? 0 : somarLancamentosFiltrado(f, 'despesa'),
   ]);
   $('lancTotalReceitas').textContent = fmtBRL(receitas);
   $('lancTotalDespesas').textContent = fmtBRL(despesas);
@@ -769,6 +816,7 @@ function abrirModalFiel(f){
   $('fFormTelefone').value = f?.telefone || '';
   $('fFormEmail').value = f?.email || '';
   $('fFormCpf').value = f?.cpf || '';
+  $('fFormRg').value = f?.rg || '';
   $('fFormObs').value = f?.observacoes || '';
   $('fFormCargo').innerHTML = '<option value="">—</option>' + state.cargos.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
   $('fFormGrupo').innerHTML = '<option value="">—</option>' + state.grupos.map(g=>`<option value="${g.id}">${g.nome}</option>`).join('');
@@ -784,7 +832,7 @@ $('btnSalvarFiel').addEventListener('click', async ()=>{
     nome, nomeBusca: normalizarTexto(nome),
     cargoId: $('fFormCargo').value || null, grupoId: $('fFormGrupo').value || null,
     telefone: $('fFormTelefone').value.trim(), email: $('fFormEmail').value.trim(),
-    cpf: $('fFormCpf').value.trim(), observacoes: $('fFormObs').value.trim(),
+    cpf: $('fFormCpf').value.trim(), rg: $('fFormRg').value.trim(), observacoes: $('fFormObs').value.trim(),
   };
   try{
     if(state.editandoFielId){
@@ -1219,11 +1267,12 @@ function nomeArquivoSeguro(txt){
 }
 
 $('btnExportarLanc').addEventListener('click', async ()=>{
-  const mes = parseInt($('lancMes').value), ano = parseInt($('lancAno').value);
-  const tipoFiltro = $('lancTipo').value;
-  let lancs = await buscarLancamentos(mes, ano);
-  if(tipoFiltro) lancs = lancs.filter(l=>l.tipo===tipoFiltro);
-  if(!lancs.length){ toast('Nada para exportar neste período.', true); return; }
+  const f = filtrosAtivosLancamentos();
+  let lancs = await buscarLancamentos(f.mes, f.ano);
+  if(f.tipo) lancs = lancs.filter(l=>l.tipo===f.tipo);
+  if(f.categoriaId) lancs = lancs.filter(l=>l.categoriaId===f.categoriaId);
+  if(f.membroId) lancs = lancs.filter(l=>l.membroId===f.membroId);
+  if(!lancs.length){ toast('Nada para exportar com esse filtro.', true); return; }
   lancs.sort((a,b)=> (a.dataStr||'').localeCompare(b.dataStr||''));
   const linhas = lancs.map(l => ({
     Data: l.dataStr ? formatarDataBR(l.dataStr) : '',
@@ -1238,7 +1287,7 @@ $('btnExportarLanc').addEventListener('click', async ()=>{
   const ws = XLSX.utils.json_to_sheet(linhas);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Lançamentos');
-  XLSX.writeFile(wb, `lancamentos_${nomeArquivoSeguro(igrejaAtual()?.nome)}_${MESES[mes-1]}_${ano}.xlsx`);
+  XLSX.writeFile(wb, `lancamentos_${nomeArquivoSeguro(igrejaAtual()?.nome)}_${MESES[f.mes-1]}_${f.ano}.xlsx`);
   toast('Exportado!');
 });
 
@@ -1250,7 +1299,7 @@ $('btnExportarFieis').addEventListener('click', async ()=>{
   if(!todos.length){ toast('Nenhum fiel para exportar.', true); return; }
   const linhas = todos.map(f => ({
     Nome: f.nome, Cargo: cargoNome(f.cargoId), Grupo: grupoNome(f.grupoId),
-    Telefone: f.telefone || '', Email: f.email || '', CPF: f.cpf || '', Observações: f.observacoes || ''
+    Telefone: f.telefone || '', Email: f.email || '', CPF: f.cpf || '', RG: f.rg || '', Observações: f.observacoes || ''
   }));
   const ws = XLSX.utils.json_to_sheet(linhas);
   const wb = XLSX.utils.book_new();
@@ -1273,20 +1322,28 @@ $('btnBaixarModelo').addEventListener('click', ()=>{
     [''],
     ['1. Preencha uma linha por registro em cada aba. Apague as linhas de exemplo antes de importar de verdade.'],
     ['2. A coluna "ID" é um código único que você escolhe (ex: F1, F2, G1...) — use-o para ligar as abas entre si.'],
+    ['   Pode ser texto ou número, mas prefira TEXTO (formate a coluna como Texto no Excel) para evitar'],
+    ['   que o Excel corte zeros à esquerda (ex: "007" virar 7) e desalinhe as referências entre abas.'],
     ['3. Nas abas lanc_receita e lanc_despesa, "Descrição da Receita"/"Descrição da Despesa" devem conter o ID da'],
     ['   categoria correspondente (aba cad_receitas / cad_despesas), não o nome escrito.'],
     ['4. "Nome do Fiel" (aba lanc_receita) deve conter o ID do fiel (aba cad_fieis), não o nome escrito.'],
     ['5. "Grupos e Ministérios" (aba cad_fieis) deve conter o ID do grupo (aba cad_grupo).'],
     ['6. "Cargo/Função" (aba cad_fieis) pode ser texto livre, ex: "Pastor", "Membro" — não precisa ser um ID.'],
-    ['7. "Responsável (Pastor)" e "Tesoureiro" (aba cad_igreja) devem conter o ID do fiel correspondente.'],
-    ['8. A coluna "Data" (lanc_receita/lanc_despesa) deve estar em formato de data do Excel.'],
-    ['9. "Competência", no formato "(01) Janeiro", "(02) Fevereiro"... define o MÊS DE REFERÊNCIA do'],
-    ['   lançamento no app (pode ser diferente do mês da "Data", quando o pagamento foi feito depois).'],
-    ['   Se deixar em branco, o app usa o mês da própria Data.'],
-    ['10. "Bloqueio" / "Bloqueado?": deixe em branco se não estiver bloqueado, ou escreva'],
+    ['   Se você marcar aqui exatamente "Pastor" ou "Tesoureiro", ainda assim precisa indicar quem é o'],
+    ['   Pastor/Tesoureiro na aba cad_igreja também (item 7) — é de lá que o app pega a assinatura dos PDFs.'],
+    ['7. "Responsável (Pastor)" e "Tesoureiro" (aba cad_igreja) devem conter o ID do fiel correspondente —'],
+    ['   é esse vínculo que faz o nome aparecer sozinho como assinatura nos relatórios em PDF.'],
+    ['8. "Nome para Relatório" (aba cad_igreja) é opcional — é o nome que aparece no topo dos PDFs.'],
+    ['   Se deixar em branco, o app usa o mesmo nome do campo "Igreja".'],
+    ['9. A coluna "Data" (lanc_receita/lanc_despesa) deve estar em formato de data do Excel.'],
+    ['10. "Competência", no formato "(01) Janeiro", "(02) Fevereiro"... define o MÊS DE REFERÊNCIA do'],
+    ['    lançamento no app (pode ser diferente do mês da "Data", quando o pagamento foi feito depois).'],
+    ['    Se deixar em branco, o app usa o mês da própria Data.'],
+    ['11. "Bloqueio" / "Bloqueado?": deixe em branco se não estiver bloqueado, ou escreva'],
     ['    "Bloqueado para Edição" se estiver.'],
-    ['11. Não precisa preencher todas as abas — só as que for usar.'],
-    ['12. Comprovantes e fotos anexados não são importados nesta versão do app.'],
+    ['12. Não precisa preencher todas as abas — só as que for usar.'],
+    ['13. Comprovantes/fotos anexados e a logo da igreja não são importados por planilha — a logo pode ser'],
+    ['    enviada depois, direto na tela "Dados da Igreja" do app (aceita PNG/JPG).'],
   ];
   const wsInstrucoes = XLSX.utils.aoa_to_sheet(instrucoes);
   wsInstrucoes['!cols'] = [{wch: 100}];
@@ -1324,8 +1381,8 @@ $('btnBaixarModelo').addEventListener('click', ()=>{
   ], [8, 24, 10]);
 
   addSheet('cad_igreja', [
-    { ID:'I1', Igreja:'Igreja Exemplo', 'Responsável (Pastor)':'F1', Tesoureiro:'F2', 'Endereço':'Rua Principal, 100', Bairro:'Centro', Cidade:'Cidade Exemplo', Estado:'RN', Cep:'59000-000', 'E-mail':'contato@igreja.com', Instagram:'@igrejaexemplo', CNPJ:'00.000.000/0001-00' },
-  ], [8, 22, 18, 14, 26, 14, 18, 8, 12, 22, 18, 20]);
+    { ID:'I1', Igreja:'Igreja Exemplo', 'Nome para Relatório':'IGREJA DE CRISTO EM EXEMPLO/RN', 'Responsável (Pastor)':'F1', Tesoureiro:'F2', 'Endereço':'Rua Principal, 100', Bairro:'Centro', Cidade:'Cidade Exemplo', Estado:'RN', Cep:'59000-000', 'E-mail':'contato@igreja.com', Instagram:'@igrejaexemplo', CNPJ:'00.000.000/0001-00' },
+  ], [8, 22, 30, 18, 14, 26, 14, 18, 8, 12, 22, 18, 20]);
 
   addSheet('lanc_receita', [
     { ID:'LR1', Data: new Date(2025,0,5), 'Competência':'(01) Janeiro', 'Descrição da Receita':'R1', Detalhamento:'', Valor:100, 'Nome do Fiel':'F1', Ano:2025, Concatenar:'', Bloqueio:'', 'Comprovante da Receita':'', 'Anexar Foto':'', 'Anexar Arquivo':'' },
@@ -1465,17 +1522,20 @@ $('btnImportar').addEventListener('click', async ()=>{
     const igrejaRows = linhasDaAba(wb, 'cad_igreja', 'Igreja');
     if(igrejaRows.length){
       const ig = igrejaRows[0];
-      const pastorNome = ig['Responsável (Pastor)'] ? (mapFiel[ig['Responsável (Pastor)']]?.nome || '') : '';
-      const tesoureiroNome = ig['Tesoureiro'] ? (mapFiel[ig['Tesoureiro']]?.nome || '') : '';
+      const pastorFiel = ig['Responsável (Pastor)'] ? mapFiel[ig['Responsável (Pastor)']] : null;
+      const tesoureiroFiel = ig['Tesoureiro'] ? mapFiel[ig['Tesoureiro']] : null;
+      const nomeIgreja = ig['Igreja'] || igrejaAtual().nome;
       await updateDoc(doc(db,'igrejas',igrejaId), {
-        nome: ig['Igreja'] || igrejaAtual().nome,
-        pastor: pastorNome, tesoureiro: tesoureiroNome,
+        nome: nomeIgreja,
+        nomeRelatorio: (ig['Nome para Relatório'] || nomeIgreja || '').toString(),
+        pastor: pastorFiel?.nome || '', pastorFielId: pastorFiel?.id || null,
+        tesoureiro: tesoureiroFiel?.nome || '', tesoureiroFielId: tesoureiroFiel?.id || null,
         endereco: ig['Endereço'] || '', bairro: ig['Bairro'] || '', cidade: ig['Cidade'] || '',
         estado: ig['Estado'] || '', cep: ig['Cep'] != null ? String(ig['Cep']) : '',
         email: ig['E-mail'] || '', instagram: ig['Instagram'] || '',
         cnpj: ig['CNPJ'] != null ? String(ig['CNPJ']) : '',
       });
-      logImport('✓ Dados da igreja atualizados');
+      logImport('✓ Dados da igreja atualizados (incluindo assinatura de Pastor/Tesoureiro)');
     }
 
     // 7) Lançamentos de receita (em lotes)
