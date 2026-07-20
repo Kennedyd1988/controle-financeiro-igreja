@@ -508,6 +508,16 @@
             <div class="view-desc">Bloqueie meses já fechados para evitar edição</div>
           </div>
         </div>
+        <div class="card" id="cardReindexarLanc" style="margin-bottom:14px; display:none;">
+          <div style="font-weight:600; margin-bottom:6px;">Corrigir saldo anterior de lançamentos antigos</div>
+          <p class="abas-hint" style="margin-bottom:10px;">
+            Lançamentos criados antes desta atualização ainda não têm a informação
+            necessária para entrar corretamente no cálculo de "saldo anterior" (Painel e
+            relatórios). Clique uma vez para corrigir — não precisa repetir depois.
+          </p>
+          <button class="btn btn-sm" id="btnReindexarLancamentos">Corrigir lançamentos antigos</button>
+          <span class="abas-hint" id="lancReindexarAviso" style="display:none; margin-left:10px;"></span>
+        </div>
         <div class="card">
           <div class="toolbar" style="margin-bottom:14px;">
             <select id="compMes"></select>
