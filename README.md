@@ -141,6 +141,18 @@ Cada lançamento agora tem dois campos de tempo separados:
 Por padrão, a competência acompanha a data escolhida — mas dá pra mudar
 manualmente, por exemplo quando um dízimo de junho é pago só em julho.
 
+## Correção: saldo anterior inconsistente com a Competência
+Havia um bug real: "Saldo anterior" era calculado pela **Data** do
+lançamento, enquanto o resto do app (totais do mês, relatórios) usa a
+**Competência**. Como esses dois campos podem ser diferentes (ex: pago em
+fevereiro, referente a janeiro), os números não batiam entre telas.
+Corrigido — agora tudo usa Competência, sem exceção.
+
+⚠️ **Passo único**: como lançamentos criados antes dessa correção não têm o
+campo novo necessário, vá em **Competências** → botão **"Corrigir
+lançamentos antigos"** (só aparece para Administradores) → clique uma vez.
+Lançamentos novos já são salvos certinho automaticamente.
+
 ## Filtros de Lançamentos
 A tela de Lançamentos agora filtra por **Competência** (mês/ano), **Tipo**
 (receita/despesa), **Categoria** e **Fiel** — todos combináveis ao mesmo
