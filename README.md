@@ -160,6 +160,13 @@ instalação continua sendo manual: Compartilhar → "Adicionar à Tela de
 Início". Posso adicionar uma dica na tela pra usuários de iPhone se
 for importante pro seu público.
 
+## Atalho de "Novo lançamento" no Painel
+Botão **"+ Novo lançamento"** direto no Painel, pra não precisar ir até a
+aba de Lançamentos só pra lançar algo rápido. Abre o mesmo formulário de
+sempre — e, ao salvar, o app já leva direto pra aba de Lançamentos (pra
+conferir/continuar lançando por lá). Só aparece pra quem tem permissão de
+editar Lançamentos (Leitura não vê o botão).
+
 ## Correção: data de hoje errada à noite (bug de fuso horário)
 O preenchimento automático de "hoje" nos formulários (Lançamento, Campanha)
 usava um método que converte a data pra UTC antes de formatar. Como o

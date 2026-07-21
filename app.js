@@ -68,6 +68,7 @@ const state = {
   lancTemMais: false,
   competenciasBloqueadas: new Set(),
   editandoLancCompetenciaOriginal: null,
+  lancModalOrigemPainel: false,
   campanhas: [],
   campanhaAtualId: null,
   campanhaAtualDados: null,
@@ -549,8 +550,13 @@ async function renderPainel(){
   if(!painelInit){ populaMesAno('painelMes','painelAno'); painelInit = true;
     $('painelMes').addEventListener('change', renderPainel);
     $('painelAno').addEventListener('change', renderPainel);
+    $('btnNovoLancamentoPainel').addEventListener('click', ()=>{
+      state.lancModalOrigemPainel = true;
+      abrirModalLancamento(null);
+    });
   }
   $('painelIgrejaNome').textContent = igrejaAtual()?.nome || '';
+  $('btnNovoLancamentoPainel').style.display = podeEditarAba('lancamentos') ? 'inline-flex' : 'none';
   if(!temAcesso('lancamentos')){
     $('statReceitas').textContent = '—'; $('statDespesas').textContent = '—'; $('statSaldo').textContent = '—';
     $('statSaldoAnterior').textContent = '—'; $('statSaldoAtual').textContent = '—';
@@ -745,7 +751,7 @@ function desenharTabelaLancamentos(){
   }).join('');
 
   $('lancTbody').querySelectorAll('[data-edit]').forEach(b=>{
-    b.addEventListener('click', ()=> abrirModalLancamento(lancs.find(l=>l.id===b.dataset.edit)));
+    b.addEventListener('click', ()=>{ state.lancModalOrigemPainel = false; abrirModalLancamento(lancs.find(l=>l.id===b.dataset.edit)); });
   });
   $('lancTbody').querySelectorAll('[data-del]').forEach(b=>{
     b.addEventListener('click', async ()=>{
@@ -762,7 +768,7 @@ function desenharTabelaLancamentos(){
 }
 function formatarDataBR(iso){ const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; }
 
-$('btnNovoLancamento').addEventListener('click', ()=> abrirModalLancamento(null));
+$('btnNovoLancamento').addEventListener('click', ()=>{ state.lancModalOrigemPainel = false; abrirModalLancamento(null); });
 function abrirModalLancamento(lanc){
   state.editandoLancId = lanc ? lanc.id : null;
   state.editandoLancCompetenciaOriginal = lanc ? competenciaKey(lanc.ano, lanc.mes) : null;
@@ -843,7 +849,12 @@ $('btnSalvarLanc').addEventListener('click', async ()=>{
     }
     $('modalLancamento').classList.remove('active');
     toast('Lançamento salvo!');
-    renderLancamentos(); renderPainel();
+    if(state.lancModalOrigemPainel){
+      state.lancModalOrigemPainel = false;
+      switchView('lancamentos');
+    } else {
+      renderLancamentos(); renderPainel();
+    }
   } catch(e){ toast('Erro ao salvar: '+e.message, true); }
 });
 
