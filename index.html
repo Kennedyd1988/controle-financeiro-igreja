@@ -41,6 +41,7 @@
   a{color:var(--brand);}
   button{font-family:inherit; cursor:pointer;}
   input,select{font-family:inherit; font-size:13.5px;}
+  button:focus-visible, .nav-btn:focus-visible{outline:2px solid var(--brand); outline-offset:2px; border-radius:6px;}
 
   /* --- layout shells --- */
   #authScreen{display:flex; flex-direction:column; min-height:100vh; align-items:center; justify-content:center; padding:24px;}
@@ -87,6 +88,38 @@
   .auth-toggle{text-align:center; font-size:12.5px; color:var(--text-dim); margin-top:16px;}
   .auth-toggle button{background:none; border:none; color:var(--brand); font-weight:500;}
   #authError{color:var(--red); font-size:12.5px; margin-top:10px; min-height:16px;}
+  .auth-main{display:flex; flex-direction:column; align-items:center; width:100%;}
+  .auth-side{display:none;}
+
+  @media(min-width:900px){
+    #authScreen{flex-direction:row; align-items:stretch; justify-content:center; padding:0;}
+    .auth-side{
+      display:flex; align-items:center; justify-content:center; flex:1 1 50%;
+      background:linear-gradient(160deg, var(--brand), #093a94 55%, #072456);
+      color:#fff; padding:60px; position:relative; overflow:hidden;
+    }
+    .auth-side::after{
+      content:''; position:absolute; width:420px; height:420px; border-radius:50%;
+      background:radial-gradient(circle, rgba(20,184,238,.35), transparent 70%);
+      top:-130px; right:-130px;
+    }
+    .auth-side::before{
+      content:''; position:absolute; width:320px; height:320px; border-radius:50%;
+      background:radial-gradient(circle, rgba(255,255,255,.08), transparent 70%);
+      bottom:-100px; left:-100px;
+    }
+    .auth-side-inner{max-width:420px; position:relative; z-index:1;}
+    .auth-side-logo{height:28px; filter:brightness(0) invert(1); margin-bottom:32px; display:block;}
+    .auth-side-title{font-family:'Source Serif 4',serif; font-weight:600; font-size:29px; line-height:1.3; margin-bottom:14px;}
+    .auth-side-desc{font-size:14px; line-height:1.65; opacity:.82; margin-bottom:30px;}
+    .auth-side-list{list-style:none; display:flex; flex-direction:column; gap:13px; font-size:13.5px;}
+    .auth-side-list li{display:flex; align-items:center; gap:10px; opacity:.95;}
+    .auth-side-list li::before{
+      content:'✓'; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+      width:20px; height:20px; border-radius:50%; background:rgba(255,255,255,.15); font-size:11px;
+    }
+    .auth-main{flex:1 1 50%; padding:60px 24px;}
+  }
 
   /* --- topbar mobile (só aparece em telas estreitas) --- */
   #mobileTopbar{display:none;}
@@ -104,14 +137,18 @@
     border-radius:8px; font-size:12.5px; width:calc(100% - 8px);
   }
   .nav-btn{
-    display:flex; align-items:center; gap:10px; width:100%;
+    position:relative; display:flex; align-items:center; gap:10px; width:100%;
     background:none; border:none; color:var(--text-dim);
     padding:9px 10px; border-radius:8px; font-size:13.5px; text-align:left;
     transition:background .12s, color .12s;
   }
   .nav-btn:hover{background:var(--surface-2); color:var(--text);}
-  .nav-btn.active{background:var(--brand-dim); color:var(--brand);}
-  .nav-icon{width:17px; height:17px; flex-shrink:0; opacity:.75;}
+  .nav-btn.active{background:var(--brand-dim); color:var(--brand); font-weight:500;}
+  .nav-btn.active::before{
+    content:''; position:absolute; left:-14px; top:50%; transform:translateY(-50%);
+    width:3px; height:18px; border-radius:0 3px 3px 0; background:var(--brand);
+  }
+  .nav-icon{width:17px; height:17px; flex-shrink:0; opacity:.75; transition:opacity .12s;}
   .nav-btn.active .nav-icon{opacity:1;}
   .sidebar-foot{margin-top:auto; padding-top:14px; border-top:1px solid var(--line);}
   .user-chip{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 8px 10px; font-size:12px; color:var(--text-dim);}
@@ -125,13 +162,30 @@
   #btnLogout{
     flex-shrink:0; width:30px; height:30px; border-radius:8px; border:1px solid var(--red-dim);
     background:var(--red-dim); color:var(--red); font-size:14px; display:flex; align-items:center; justify-content:center;
+    transition:background .12s, color .12s;
   }
   #btnLogout:hover{background:var(--red); color:#fff;}
+  .user-avatar{
+    flex-shrink:0; width:32px; height:32px; border-radius:50%;
+    background:linear-gradient(135deg, var(--brand), var(--cyan)); color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    font-size:12px; font-weight:600; letter-spacing:.02em;
+  }
+
+  /* --- barra de carregamento (topo da tela) --- */
+  #loadingBar{
+    position:fixed; top:0; left:0; height:3px; width:0%;
+    background:linear-gradient(90deg, var(--brand), var(--cyan));
+    z-index:300; opacity:0; transition:width .4s ease, opacity .25s ease;
+  }
+  #loadingBar.active{opacity:1; width:75%;}
+  #loadingBar.done{opacity:0; width:100%; transition:width .2s ease, opacity .35s ease .1s;}
 
   /* --- main --- */
   #main{flex:1; padding:28px 36px 60px; max-width:1180px; min-width:0;}
   .view{display:none;}
-  .view.active{display:block;}
+  .view.active{display:block; animation:viewIn .22s ease;}
+  @keyframes viewIn{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
   .view-header{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px;}
   .view-title{font-size:21px; font-weight:600;}
   .view-desc{color:var(--text-dim); font-size:13px; margin-top:4px;}
@@ -144,14 +198,16 @@
     background:var(--surface-2); border:1px solid var(--line); color:var(--text);
     padding:8px 14px; border-radius:8px; font-size:13px; font-weight:500;
     display:inline-flex; align-items:center; gap:6px;
+    transition:border-color .12s, opacity .12s, transform .08s;
   }
   .btn:hover{border-color:var(--brand);}
+  .btn:active{transform:scale(.97);}
   .btn-primary{background:var(--brand); border-color:var(--brand); color:#fff;}
   .btn-primary:hover{opacity:.92;}
   .btn-danger{background:var(--red-dim); border-color:var(--red-dim); color:var(--red);}
   .btn-sm{padding:5px 10px; font-size:12px;}
 
-  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px; transition:box-shadow .15s;}
   .grid{display:grid; gap:14px;}
   .grid-3{grid-template-columns:repeat(3,1fr);}
   .grid-2{grid-template-columns:repeat(2,1fr);}
@@ -191,6 +247,16 @@
   }
 
   .stat-label{font-size:12px; color:var(--text-dim); margin-bottom:6px;}
+  .stat-top{display:flex; align-items:center; gap:9px; margin-bottom:12px;}
+  .stat-top .stat-label{margin-bottom:0;}
+  .stat-icon{
+    width:30px; height:30px; border-radius:8px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .stat-icon svg{width:16px; height:16px;}
+  .stat-icon.green{background:var(--green-dim); color:var(--green);}
+  .stat-icon.red{background:var(--red-dim); color:var(--red);}
+  .stat-icon.brand{background:var(--brand-dim); color:var(--brand);}
   .stat-value{font-size:24px; font-weight:600; font-family:'IBM Plex Mono',monospace;}
   .stat-value.green{color:var(--green);}
   .stat-value.red{color:var(--red);}
@@ -201,6 +267,9 @@
   th{text-align:left; color:var(--text-dim); font-weight:500; font-size:12px; padding:8px 10px; border-bottom:1px solid var(--line);}
   td{padding:9px 10px; border-bottom:1px solid var(--line);}
   tr:last-child td{border-bottom:none;}
+  tbody tr{transition:background .1s ease;}
+  tbody tr:nth-child(even){background:rgba(15,41,71,.014);}
+  tbody tr:hover{background:var(--surface-2);}
   .tag{display:inline-block; padding:2px 8px; border-radius:99px; font-size:11.5px; font-weight:500;}
   .tag.receita{background:var(--green-dim); color:var(--green);}
   .tag.despesa{background:var(--red-dim); color:var(--red);}
@@ -216,17 +285,20 @@
   .toolbar select, .toolbar input{padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface); font-size:13px;}
 
   .empty{padding:40px 20px; text-align:center; color:var(--text-faint);}
+  .empty::before{content:'🗂️'; display:block; font-size:26px; margin-bottom:8px; opacity:.6;}
 
   /* modal */
   .modal-backdrop{
     display:none; position:fixed; inset:0; background:rgba(15,41,71,.4); z-index:50;
     align-items:center; justify-content:center; padding:20px;
   }
-  .modal-backdrop.active{display:flex;}
+  .modal-backdrop.active{display:flex; animation:backdropIn .15s ease;}
+  @keyframes backdropIn{ from{opacity:0;} to{opacity:1;} }
   .modal{
     background:var(--surface); border-radius:14px; padding:24px; width:100%; max-width:460px;
-    max-height:88vh; overflow-y:auto;
+    max-height:88vh; overflow-y:auto; animation:modalIn .18s cubic-bezier(.2,.8,.3,1);
   }
+  @keyframes modalIn{ from{opacity:0; transform:translateY(10px) scale(.98);} to{opacity:1; transform:none;} }
   .modal h3{font-size:17px; margin-bottom:16px;}
   .modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:18px;}
 
@@ -242,7 +314,8 @@
     border-radius:8px; font-size:13px; z-index:100; box-shadow:0 6px 20px rgba(0,0,0,.15);
     display:none;
   }
-  .toast.active{display:block;}
+  .toast.active{display:block; animation:toastIn .22s cubic-bezier(.2,.8,.3,1);}
+  @keyframes toastIn{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;} }
   .toast.error{background:var(--red);}
   .install-banner{
     display:none; position:fixed; bottom:16px; left:16px; right:16px; max-width:420px; margin:0 auto;
@@ -258,38 +331,54 @@
 </head>
 <body>
 
+  <div id="loadingBar"></div>
+
   <!-- AUTH SCREEN -->
   <div id="authScreen">
-    <div class="auth-card">
-      <img src="logo-horizontal.png" alt="SOFT+" style="height:34px; width:auto; margin-bottom:6px;">
-      <div class="auth-sub" id="authSub">Financeiro de Igrejas — entrar</div>
-
-      <div class="field" id="fieldNome" style="display:none;">
-        <label>Seu nome<span class="req">*</span></label>
-        <input id="inputNome" type="text" placeholder="Nome completo" required>
-      </div>
-      <div class="field">
-        <label>E-mail<span class="req">*</span></label>
-        <input id="inputEmail" type="email" placeholder="voce@email.com" required>
-      </div>
-      <div class="field">
-        <label>Senha<span class="req">*</span></label>
-        <input id="inputSenha" type="password" placeholder="Mínimo 6 caracteres" required>
-      </div>
-
-      <div class="auth-actions">
-        <button class="btn btn-primary" id="btnAuthSubmit">Entrar</button>
-      </div>
-      <div id="authError"></div>
-      <div class="auth-toggle">
-        <button id="btnEsqueciSenha" style="font-size:12.5px;">Esqueci minha senha</button>
-      </div>
-      <div class="auth-toggle" id="authToggleWrap" style="display:none;">
-        <span id="authToggleText">Ainda não tem conta?</span>
-        <button id="btnAuthToggle">Criar conta</button>
+    <div class="auth-side">
+      <div class="auth-side-inner">
+        <img src="logo-horizontal.png" alt="SOFT+" class="auth-side-logo">
+        <div class="auth-side-title">Financeiro de igrejas, sem complicação.</div>
+        <p class="auth-side-desc">Lançamentos, fiéis, relatórios em PDF e fluxo de caixa — tudo num só lugar, com controle de acesso por usuário.</p>
+        <ul class="auth-side-list">
+          <li>Relatórios prontos para prestação de contas em PDF</li>
+          <li>Vários usuários, cada um com seu papel e permissões</li>
+          <li>Funciona como app instalado no celular</li>
+        </ul>
       </div>
     </div>
-    <button class="btn btn-sm" id="btnInstalarLogin" style="margin-top:16px;">📲 Instalar app no celular</button>
+    <div class="auth-main">
+      <div class="auth-card">
+        <img src="logo-horizontal.png" alt="SOFT+" style="height:34px; width:auto; margin-bottom:6px;">
+        <div class="auth-sub" id="authSub">Financeiro de Igrejas — entrar</div>
+
+        <div class="field" id="fieldNome" style="display:none;">
+          <label>Seu nome<span class="req">*</span></label>
+          <input id="inputNome" type="text" placeholder="Nome completo" required>
+        </div>
+        <div class="field">
+          <label>E-mail<span class="req">*</span></label>
+          <input id="inputEmail" type="email" placeholder="voce@email.com" required>
+        </div>
+        <div class="field">
+          <label>Senha<span class="req">*</span></label>
+          <input id="inputSenha" type="password" placeholder="Mínimo 6 caracteres" required>
+        </div>
+
+        <div class="auth-actions">
+          <button class="btn btn-primary" id="btnAuthSubmit">Entrar</button>
+        </div>
+        <div id="authError"></div>
+        <div class="auth-toggle">
+          <button id="btnEsqueciSenha" style="font-size:12.5px;">Esqueci minha senha</button>
+        </div>
+        <div class="auth-toggle" id="authToggleWrap" style="display:none;">
+          <span id="authToggleText">Ainda não tem conta?</span>
+          <button id="btnAuthToggle">Criar conta</button>
+        </div>
+      </div>
+      <button class="btn btn-sm" id="btnInstalarLogin" style="margin-top:16px;">📲 Instalar app no celular</button>
+    </div>
   </div>
 
   <!-- APP SHELL -->
@@ -323,6 +412,7 @@
       <div class="sidebar-foot">
         <button class="btn btn-sm" id="btnInstalarSidebar" style="width:100%; margin-bottom:10px;">📲 Instalar app</button>
         <div class="user-chip">
+          <div class="user-avatar" id="userAvatar">—</div>
           <div class="user-chip-info">
             <span id="userNomeChip">—</span>
             <span class="papel-badge" id="papelChip">—</span>
@@ -349,25 +439,40 @@
         </div>
         <div class="grid grid-3" style="margin-bottom:18px;">
           <div class="card">
-            <div class="stat-label">Receitas do mês</div>
+            <div class="stat-top">
+              <div class="stat-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+              <div class="stat-label">Receitas do mês</div>
+            </div>
             <div class="stat-value green num" id="statReceitas">R$ 0,00</div>
           </div>
           <div class="card">
-            <div class="stat-label">Despesas do mês</div>
+            <div class="stat-top">
+              <div class="stat-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg></div>
+              <div class="stat-label">Despesas do mês</div>
+            </div>
             <div class="stat-value red num" id="statDespesas">R$ 0,00</div>
           </div>
           <div class="card">
-            <div class="stat-label">Saldo do mês</div>
+            <div class="stat-top">
+              <div class="stat-icon brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></div>
+              <div class="stat-label">Saldo do mês</div>
+            </div>
             <div class="stat-value num" id="statSaldo">R$ 0,00</div>
           </div>
         </div>
         <div class="grid grid-2" style="margin-bottom:18px;">
           <div class="card">
-            <div class="stat-label">Saldo anterior (até o fim do mês passado)</div>
+            <div class="stat-top">
+              <div class="stat-icon brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+              <div class="stat-label">Saldo anterior (até o fim do mês passado)</div>
+            </div>
             <div class="stat-value num" id="statSaldoAnterior" style="font-size:19px;">R$ 0,00</div>
           </div>
           <div class="card">
-            <div class="stat-label">Saldo atual (anterior + mês)</div>
+            <div class="stat-top">
+              <div class="stat-icon brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+              <div class="stat-label">Saldo atual (anterior + mês)</div>
+            </div>
             <div class="stat-value num" id="statSaldoAtual" style="font-size:19px;">R$ 0,00</div>
           </div>
         </div>

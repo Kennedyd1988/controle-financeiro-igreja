@@ -85,6 +85,33 @@ function toast(msg, isError){
   t.className = 'toast active' + (isError ? ' error' : '');
   setTimeout(()=> t.className = 'toast', 2600);
 }
+function iniciais(nome){
+  const partes = (nome||'').trim().split(/\s+/).filter(Boolean);
+  if(!partes.length) return '—';
+  return partes.length === 1 ? partes[0].slice(0,2).toUpperCase() : (partes[0][0] + partes[partes.length-1][0]).toUpperCase();
+}
+// Barra fina no topo indicando que dados estão sendo buscados no Firestore —
+// evita telas em branco durante trocas de aba/igreja sem feedback nenhum.
+let loadingDepth = 0;
+function mostrarCarregando(){
+  loadingDepth++;
+  const bar = $('loadingBar');
+  bar.classList.remove('done');
+  bar.classList.add('active');
+}
+function esconderCarregando(){
+  loadingDepth = Math.max(0, loadingDepth - 1);
+  if(loadingDepth > 0) return;
+  const bar = $('loadingBar');
+  bar.classList.remove('active');
+  bar.classList.add('done');
+  setTimeout(()=>{ bar.classList.remove('done'); }, 300);
+}
+async function comCarregando(promessa){
+  mostrarCarregando();
+  try{ return await promessa; }
+  finally{ esconderCarregando(); }
+}
 function igrejaAtual(){ return state.igrejas.find(i => i.id === state.igrejaAtualId); }
 function papelAtual(){ const ig = igrejaAtual(); return ig ? ig.papel : null; }
 function abasAtual(){ const ig = igrejaAtual(); return (ig && Array.isArray(ig.abas)) ? ig.abas : TODAS_ABAS; }
@@ -283,12 +310,14 @@ $('btnLogout').addEventListener('click', ()=> signOut(auth));
 
 onAuthStateChanged(auth, async (user)=>{
   if(user){
+    mostrarCarregando();
     state.user = user;
     await carregarPerfil(user);
     await resgatarConvitesPendentes(user);
     await carregarIgrejasDoUsuario(user);
     $('authScreen').style.display = 'none';
     $('appShell').className = 'active';
+    esconderCarregando();
   } else {
     state.user = null;
     $('authScreen').style.display = 'flex';
@@ -306,6 +335,7 @@ async function carregarPerfil(user){
     await setDoc(ref, { ...state.perfil, criadoEm: serverTimestamp() });
   }
   $('userNomeChip').textContent = state.perfil.nome;
+  $('userAvatar').textContent = iniciais(state.perfil.nome);
 }
 
 // Verifica se existe convite (em qualquer igreja) para o e-mail do usuário logado,
@@ -391,8 +421,10 @@ async function onIgrejaChange(){
   state.fieisPagina = []; state.fieisCursor = null; state.fieisTemMais = false; state.fieisBuscaAtual = '';
   if($('fieisBusca')) $('fieisBusca').value = '';
   state.campanhas = []; state.campanhaAtualId = null; state.campanhaAtualDados = null;
+  mostrarCarregando();
   await carregarDadosDaIgreja();
   await carregarCompetenciasBloqueadas();
+  esconderCarregando();
   aplicarLogoSidebar();
   // se a aba atualmente aberta não é mais acessível, volta pro painel
   const ativo = document.querySelector('.nav-btn.active');
@@ -509,7 +541,7 @@ function refreshView(name){
     igreja: renderIgreja, usuarios: renderUsuarios, novaIgreja: ()=>{},
     importar: renderImportar, campanhas: renderCampanhas,
   };
-  if(map[name]) map[name]();
+  if(map[name]) comCarregando(Promise.resolve(map[name]()));
 }
 
 // ---------- NOVA IGREJA (bootstrap) ----------
