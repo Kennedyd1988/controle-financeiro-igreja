@@ -160,6 +160,15 @@ instalação continua sendo manual: Compartilhar → "Adicionar à Tela de
 Início". Posso adicionar uma dica na tela pra usuários de iPhone se
 for importante pro seu público.
 
+## Correção: data de hoje errada à noite (bug de fuso horário)
+O preenchimento automático de "hoje" nos formulários (Lançamento, Campanha)
+usava um método que converte a data pra UTC antes de formatar. Como o
+Brasil fica atrás do UTC, isso fazia o app "pular" pro dia seguinte à
+noite (a partir de mais ou menos 21h, dependendo do fuso). Corrigido —
+agora usa sempre a data local do aparelho, sem essa conversão. Não mexi na
+importação de planilha, que já estava correta (lida com datas digitadas no
+Excel, não com "agora").
+
 ## Botão fixo de instalar (em vez de banner por tempo)
 Achei o motivo real do banner nunca aparecer: faltava um `id` num elemento
 de HTML que o JavaScript tentava atualizar — isso quebrava a função

@@ -32,6 +32,17 @@ const ABAS_CONFIGURAVEIS = [
 const TODAS_ABAS = ABAS_CONFIGURAVEIS.map(a => a.id);
 
 const hoje = new Date();
+// Formata uma data no fuso horário LOCAL do aparelho (não em UTC). Usar
+// toISOString() aqui seria um erro clássico: ele converte pra UTC antes de
+// formatar, o que "pula" pro dia seguinte à noite em fusos atrás do UTC
+// (como o Brasil) — por isso essa função existe.
+function dataLocalISO(d){
+  d = d || new Date();
+  const ano = d.getFullYear();
+  const mes = String(d.getMonth()+1).padStart(2,'0');
+  const dia = String(d.getDate()).padStart(2,'0');
+  return `${ano}-${mes}-${dia}`;
+}
 const state = {
   user: null,
   perfil: null,
@@ -757,7 +768,7 @@ function abrirModalLancamento(lanc){
   state.editandoLancCompetenciaOriginal = lanc ? competenciaKey(lanc.ano, lanc.mes) : null;
   $('modalLancTitulo').textContent = lanc ? 'Editar lançamento' : 'Novo lançamento';
   $('lFormTipo').value = lanc ? lanc.tipo : 'receita';
-  $('lFormData').value = lanc ? lanc.dataStr : new Date().toISOString().slice(0,10);
+  $('lFormData').value = lanc ? lanc.dataStr : dataLocalISO();
   $('lFormDescricao').value = lanc ? (lanc.descricao||'') : '';
   $('lFormValor').value = lanc ? lanc.valor : '';
   popularCategoriaSelect();
@@ -1299,7 +1310,7 @@ function abrirModalCampanha(c){
   $('campFormMeta').value = c?.meta || '';
   $('campFormResponsavelBusca').value = c?.responsavelNome || '';
   $('campFormResponsavelId').value = c?.responsavelFielId || '';
-  $('campFormDataInicio').value = c?.dataInicio || new Date().toISOString().slice(0,10);
+  $('campFormDataInicio').value = c?.dataInicio || dataLocalISO();
   $('campFormDataFim').value = c?.dataFim || '';
   $('modalCampanha').classList.add('active');
 }
@@ -1417,7 +1428,7 @@ function abrirModalCampLanc(l){
   $('modalCampLancTitulo').textContent = l ? 'Editar lançamento' : 'Novo lançamento';
   $('campLancFormTipo').value = l ? l.tipo : 'entrada';
   $('campLancFormCategoria').value = l?.categoria || '';
-  $('campLancFormData').value = l ? l.data : new Date().toISOString().slice(0,10);
+  $('campLancFormData').value = l ? l.data : dataLocalISO();
   $('campLancFormValor').value = l ? l.valor : '';
   $('campLancFormDescricao').value = l?.descricao || '';
   $('campLancFormFiel').value = l?.fielId || '';
