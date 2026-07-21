@@ -1203,9 +1203,34 @@ async function renderCompetencias(){
   $('cardReindexarLanc').style.display = isAdmin() ? 'block' : 'none';
   const snaps = await getDocs(query(collection(db,'igrejas',state.igrejaAtualId,'competencias'), orderBy('ano','desc')));
   const lista = snaps.docs.map(d=>({id:d.id, ...d.data()})).filter(c=>c.bloqueado);
-  $('compLista').innerHTML = lista.length ? lista.map(c => `
-    <div class="list-row"><span>${MESES[c.mes-1]} / ${c.ano}</span><span class="tag locked">bloqueado</span></div>
-  `).join('') : `<div class="empty">Nenhuma competência bloqueada ainda.</div>`;
+  if(!lista.length){
+    $('compLista').innerHTML = `<div class="empty">Nenhuma competência bloqueada ainda.</div>`;
+    return;
+  }
+  // Agrupa por ano (accordion) — sem isso, a lista fica uma parede de texto
+  // conforme os anos passam e mais meses vão sendo bloqueados.
+  const porAno = {};
+  lista.forEach(c => { if(!porAno[c.ano]) porAno[c.ano] = []; porAno[c.ano].push(c); });
+  const anos = Object.keys(porAno).map(Number).sort((a,b)=> b-a);
+  $('compLista').innerHTML = anos.map((ano, i) => {
+    const meses = porAno[ano].sort((a,b)=> a.mes-b.mes);
+    return `
+    <div class="year-group ${i===0 ? 'open' : ''}">
+      <button type="button" class="year-header" data-ano="${ano}">
+        <span class="year-header-left">
+          <svg class="year-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          <span class="serif">${ano}</span>
+        </span>
+        <span class="year-count">${meses.length} ${meses.length===1 ? 'mês bloqueado' : 'meses bloqueados'}</span>
+      </button>
+      <div class="year-body">
+        ${meses.map(c => `<div class="list-row"><span>${MESES[c.mes-1]}</span><span class="tag locked">bloqueado</span></div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  $('compLista').querySelectorAll('.year-header').forEach(btn=>{
+    btn.addEventListener('click', ()=> btn.closest('.year-group').classList.toggle('open'));
+  });
 }
 // Corrige lançamentos criados antes do campo "competenciaKey" existir —
 // sem isso, eles ficam de fora do cálculo de saldo anterior.

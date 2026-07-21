@@ -165,6 +165,7 @@
     transition:background .12s, color .12s;
   }
   #btnLogout:hover{background:var(--red); color:#fff;}
+  #btnLogout svg{width:16px; height:16px;}
   .user-avatar{
     flex-shrink:0; width:32px; height:32px; border-radius:50%;
     background:linear-gradient(135deg, var(--brand), var(--cyan)); color:#fff;
@@ -309,6 +310,22 @@
   .list-row{display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--line);}
   .list-row:last-child{border-bottom:none;}
 
+  /* accordion por ano (ex: Competências) */
+  .year-group{border-bottom:1px solid var(--line);}
+  .year-group:last-child{border-bottom:none;}
+  .year-header{
+    width:100%; display:flex; align-items:center; justify-content:space-between;
+    background:none; border:none; padding:12px 2px; font-size:14.5px; color:var(--text);
+    text-align:left;
+  }
+  .year-header:hover{color:var(--brand);}
+  .year-header-left{display:flex; align-items:center; gap:9px;}
+  .year-chevron{width:15px; height:15px; color:var(--text-faint); transition:transform .15s;}
+  .year-group.open .year-chevron{transform:rotate(90deg); color:var(--brand);}
+  .year-count{font-size:12px; font-weight:500; color:var(--text-dim);}
+  .year-body{display:none; padding:0 2px 8px 26px;}
+  .year-group.open .year-body{display:block; animation:viewIn .18s ease;}
+
   .toast{
     position:fixed; bottom:20px; right:20px; background:var(--text); color:#fff; padding:11px 18px;
     border-radius:8px; font-size:13px; z-index:100; box-shadow:0 6px 20px rgba(0,0,0,.15);
@@ -417,7 +434,7 @@
             <span id="userNomeChip">—</span>
             <span class="papel-badge" id="papelChip">—</span>
           </div>
-          <button id="btnLogout" title="Sair" aria-label="Sair">⏻</button>
+          <button id="btnLogout" title="Sair" aria-label="Sair"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
         </div>
       </div>
     </nav>
