@@ -2613,27 +2613,41 @@ if('serviceWorker' in navigator){
 // ---------- PWA: banner próprio de "Instalar app" ----------
 // O Chrome, sozinho, só oferece a instalação escondida num menu — aqui a
 // gente escuta o evento que ele dispara quando o app É instalável e mostra
-// um convite visível, com botão. Não aparece de novo na mesma sessão se a
-// pessoa fechar, e não aparece nunca mais se ela recusar de vez.
+// um convite visível, com botão. Fechar esconde só até a próxima vez que
+// abrir o app (não é "pra sempre") — assim dá pra testar de novo fácil.
 let promptInstalacaoEvento = null;
-const CHAVE_DISMISS_INSTALL = 'softplus_install_dismissed';
+const CHAVE_DISMISS_INSTALL = 'softplus_install_dismissed_sessao';
 
 function appJaInstalado(){
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+function jaFechouNestaSessao(){
+  try{ return sessionStorage.getItem(CHAVE_DISMISS_INSTALL) === '1'; } catch(err){ return false; }
+}
+function marcarFechadoNestaSessao(){
+  try{ sessionStorage.setItem(CHAVE_DISMISS_INSTALL, '1'); } catch(err){ /* sem problema se não der pra guardar */ }
+}
+function esconderBannerInstalar(){
+  $('instalarBanner').classList.remove('active');
+}
+function mostrarBannerInstalar(textoHtml, mostrarBotaoInstalar){
+  if(appJaInstalado() || jaFechouNestaSessao()) return;
+  $('instalarBannerTexto').innerHTML = textoHtml;
+  $('btnInstalarApp').style.display = mostrarBotaoInstalar ? 'inline-flex' : 'none';
+  $('instalarBanner').classList.add('active');
 }
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   promptInstalacaoEvento = e;
-  if(appJaInstalado()) return;
-  let jaRecusou = false;
-  try{ jaRecusou = localStorage.getItem(CHAVE_DISMISS_INSTALL) === '1'; } catch(err){ /* localStorage bloqueado, tudo bem */ }
-  if(jaRecusou) return;
-  $('instalarBanner').classList.add('active');
+  mostrarBannerInstalar(
+    '<strong>Instalar o SOFT+</strong>Acesso rápido, direto da tela inicial do seu celular.',
+    true
+  );
 });
 
 $('btnInstalarApp').addEventListener('click', async () => {
-  $('instalarBanner').classList.remove('active');
+  esconderBannerInstalar();
   if(!promptInstalacaoEvento) return;
   promptInstalacaoEvento.prompt();
   await promptInstalacaoEvento.userChoice;
@@ -2641,11 +2655,25 @@ $('btnInstalarApp').addEventListener('click', async () => {
 });
 
 $('btnFecharInstalarBanner').addEventListener('click', () => {
-  $('instalarBanner').classList.remove('active');
-  try{ localStorage.setItem(CHAVE_DISMISS_INSTALL, '1'); } catch(err){ /* sem problema se não der pra guardar */ }
+  esconderBannerInstalar();
+  marcarFechadoNestaSessao();
 });
 
 window.addEventListener('appinstalled', () => {
-  $('instalarBanner').classList.remove('active');
-  try{ localStorage.setItem(CHAVE_DISMISS_INSTALL, '1'); } catch(err){ /* sem problema se não der pra guardar */ }
+  esconderBannerInstalar();
+  marcarFechadoNestaSessao();
 });
+
+// Alguns navegadores (Safari/iPhone, e às vezes o Chrome do Android por
+// causa de regras internas de "engajamento") nunca disparam o evento
+// acima. Depois de alguns segundos, se nada apareceu ainda, mostramos um
+// aviso com o passo a passo manual — assim ninguém fica sem saber que dá
+// pra instalar, em nenhum aparelho.
+setTimeout(()=>{
+  if(promptInstalacaoEvento || appJaInstalado() || jaFechouNestaSessao()) return;
+  const ehIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const instrucao = ehIOS
+    ? '<strong>Instalar o SOFT+</strong>Toque em Compartilhar <span style="font-weight:600;">⬆</span> e depois em "Adicionar à Tela de Início".'
+    : '<strong>Instalar o SOFT+</strong>Toque no menu ⋮ do navegador e escolha "Instalar app" ou "Adicionar à tela inicial".';
+  mostrarBannerInstalar(instrucao, false);
+}, 4000);

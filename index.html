@@ -111,7 +111,8 @@
   }
   .nav-btn:hover{background:var(--surface-2); color:var(--text);}
   .nav-btn.active{background:var(--brand-dim); color:var(--brand);}
-  .nav-dot{width:6px; height:6px; border-radius:50%; background:currentColor; opacity:.5; flex-shrink:0;}
+  .nav-icon{width:17px; height:17px; flex-shrink:0; opacity:.75;}
+  .nav-btn.active .nav-icon{opacity:1;}
   .sidebar-foot{margin-top:auto; padding-top:14px; border-top:1px solid var(--line);}
   .user-chip{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 8px 10px; font-size:12px; color:var(--text-dim);}
   .user-chip-info{display:flex; flex-direction:column; gap:4px; min-width:0;}
@@ -172,7 +173,7 @@
     #appShell.active{display:block;}
     #sidebar{
       position:fixed; top:0; left:0; height:100vh; z-index:60;
-      width:250px; max-width:82vw;
+      width:250px; max-width:82vw; overflow-y:auto;
       transform:translateX(-100%); transition:transform .2s ease;
       box-shadow:0 0 40px rgba(15,41,71,.18);
     }
@@ -304,17 +305,17 @@
 
       <select class="igreja-switch" id="igrejaSwitch"></select>
 
-      <button class="nav-btn active" data-view="painel"><span class="nav-dot"></span>Painel</button>
-      <button class="nav-btn" data-view="lancamentos"><span class="nav-dot"></span>Lançamentos</button>
-      <button class="nav-btn" data-view="fieis"><span class="nav-dot"></span>Fiéis</button>
-      <button class="nav-btn" data-view="cadastros"><span class="nav-dot"></span>Categorias e Grupos</button>
-      <button class="nav-btn" data-view="relatorios"><span class="nav-dot"></span>Relatórios</button>
-      <button class="nav-btn" data-view="competencias"><span class="nav-dot"></span>Competências</button>
-      <button class="nav-btn" data-view="campanhas"><span class="nav-dot"></span>Campanhas</button>
-      <button class="nav-btn" data-view="igreja"><span class="nav-dot"></span>Dados da Igreja</button>
-      <button class="nav-btn" data-view="usuarios" id="navUsuarios" style="display:none;"><span class="nav-dot"></span>Usuários</button>
-      <button class="nav-btn" data-view="importar" id="navImportar" style="display:none;"><span class="nav-dot"></span>Importar dados</button>
-      <button class="nav-btn" data-view="novaIgreja"><span class="nav-dot"></span>+ Nova Igreja</button>
+      <button class="nav-btn active" data-view="painel"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Painel</button>
+      <button class="nav-btn" data-view="lancamentos"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3v12l-4-3-4 3V3"/><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/></svg>Lançamentos</button>
+      <button class="nav-btn" data-view="fieis"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Fiéis</button>
+      <button class="nav-btn" data-view="cadastros"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z"/><circle cx="7" cy="7" r="1.3" fill="currentColor" stroke="none"/></svg>Categorias e Grupos</button>
+      <button class="nav-btn" data-view="relatorios"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>Relatórios</button>
+      <button class="nav-btn" data-view="competencias"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Competências</button>
+      <button class="nav-btn" data-view="campanhas"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22V3"/></svg>Campanhas</button>
+      <button class="nav-btn" data-view="igreja"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M10 4h4"/><path d="M4 21V10l8-6 8 6v11"/><path d="M9 21v-6h6v6"/></svg>Dados da Igreja</button>
+      <button class="nav-btn" data-view="usuarios" id="navUsuarios" style="display:none;"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 11 2 2 4-4"/></svg>Usuários</button>
+      <button class="nav-btn" data-view="importar" id="navImportar" style="display:none;"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>Importar dados</button>
+      <button class="nav-btn" data-view="novaIgreja"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Nova Igreja</button>
 
       <div class="sidebar-foot">
         <div class="user-chip">

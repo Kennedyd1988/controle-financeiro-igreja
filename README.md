@@ -160,6 +160,28 @@ instalação continua sendo manual: Compartilhar → "Adicionar à Tela de
 Início". Posso adicionar uma dica na tela pra usuários de iPhone se
 for importante pro seu público.
 
+## Correções: menu não rolava no celular, e banner de instalar
+Achei o motivo real do botão "Sair" sumir no celular: o menu lateral
+cresceu bastante (Painel, Lançamentos, Fiéis, Categorias, Relatórios,
+Competências, Campanhas, Igreja, Usuários, Importar...) e, no celular, ele
+não tinha rolagem — o conteúdo que não cabia na tela ficava simplesmente
+invisível, sem como chegar até o "Sair" lá embaixo. Corrigido: agora o menu
+rola normalmente quando tem mais itens do que cabe na tela.
+
+Também troquei o banner de "Instalar app": antes, fechar com o "×"
+escondia ele **para sempre** (fica guardado permanentemente no navegador).
+Agora esconder é só **pra aquela visita** — da próxima vez que abrir o app,
+ele aparece de novo (a não ser que o app já esteja instalado). Além disso,
+se o navegador não avisar automaticamente que dá pra instalar (acontece
+bastante no Android por regras internas do Chrome, e sempre no iPhone),
+depois de alguns segundos aparece um aviso com o passo a passo manual —
+assim ninguém fica sem saber que existe essa opção, em nenhum aparelho.
+
+## Ícones no menu lateral
+Trocado as bolinhas por ícones específicos de cada aba (Painel, Lançamentos,
+Fiéis, Categorias, Relatórios, Competências, Campanhas, Igreja, Usuários,
+Importar, Nova Igreja) — mais fácil de reconhecer rapidamente cada seção.
+
 ## Logo oficial do SOFT+
 Troquei o "S+" genérico que eu tinha desenhado (só um placeholder) pela
 logo de verdade que vocês me mandaram — aparece agora na tela de login, no
