@@ -1039,18 +1039,18 @@ async function renderRelatorios(){
   }
   const mes = parseInt($('relMes').value), ano = parseInt($('relAno').value);
   const lancs = await buscarLancamentos(mes, ano);
-  $('relReceitas').innerHTML = agruparPorCategoria(lancs.filter(l=>l.tipo==='receita'));
-  $('relDespesas').innerHTML = agruparPorCategoria(lancs.filter(l=>l.tipo==='despesa'));
+  $('relReceitas').innerHTML = agruparPorCategoria(lancs.filter(l=>l.tipo==='receita'), 'green');
+  $('relDespesas').innerHTML = agruparPorCategoria(lancs.filter(l=>l.tipo==='despesa'), 'red');
   renderRelatorioFiel();
   renderRelatorioAnual();
 }
-function agruparPorCategoria(lancs){
+function agruparPorCategoria(lancs, cor){
   const grupos = {};
   lancs.forEach(l => { grupos[l.categoriaNome] = (grupos[l.categoriaNome]||0) + l.valor; });
   const entradas = Object.entries(grupos).sort((a,b)=>b[1]-a[1]);
   if(!entradas.length) return `<div class="empty">Sem lançamentos neste mês.</div>`;
   return entradas.map(([nome,total]) => `
-    <div class="list-row"><span>${nome}</span><span class="num">${fmtBRL(total)}</span></div>`).join('');
+    <div class="list-row"><span>${nome}</span><span class="num ${cor}">${fmtBRL(total)}</span></div>`).join('');
 }
 // Soma receitas ou despesas de um mês direto no servidor (agregação),
 // sem baixar os documentos — muito mais leve para meses/anos com muitos
@@ -1097,13 +1097,17 @@ async function renderRelatorioAnual(){
   let totalReceitas = 0, totalDespesas = 0;
   const linhas = porMes.map((m, i) => {
     totalReceitas += m.receitas; totalDespesas += m.despesas;
-    return `<tr><td>${MESES[i]}</td><td class="num">${fmtBRL(m.saldoAnterior)}</td><td class="num">${fmtBRL(m.receitas)}</td><td class="num">${fmtBRL(m.despesas)}</td><td class="num">${fmtBRL(m.receitas-m.despesas)}</td></tr>`;
+    const saldoMes = m.receitas - m.despesas;
+    const corSaldoMes = saldoMes >= 0 ? 'green' : 'red';
+    const corSaldoAnterior = m.saldoAnterior >= 0 ? 'green' : 'red';
+    return `<tr><td>${MESES[i]}</td><td class="num ${corSaldoAnterior}">${fmtBRL(m.saldoAnterior)}</td><td class="num green">${fmtBRL(m.receitas)}</td><td class="num red">${fmtBRL(m.despesas)}</td><td class="num ${corSaldoMes}">${fmtBRL(saldoMes)}</td></tr>`;
   }).join('');
+  const corTotalSaldo = (totalReceitas-totalDespesas) >= 0 ? 'green' : 'red';
   $('relAnualTabela').innerHTML = `
     <div class="table-scroll"><table>
       <thead><tr><th>Mês</th><th style="text-align:right;">Saldo Anterior</th><th style="text-align:right;">Receitas</th><th style="text-align:right;">Despesas</th><th style="text-align:right;">Saldo do Mês</th></tr></thead>
       <tbody>${linhas}</tbody>
-      <tfoot><tr style="font-weight:600;"><td colspan="2">Total do ano</td><td class="num">${fmtBRL(totalReceitas)}</td><td class="num">${fmtBRL(totalDespesas)}</td><td class="num">${fmtBRL(totalReceitas-totalDespesas)}</td></tr></tfoot>
+      <tfoot><tr style="font-weight:600;"><td colspan="2">Total do ano</td><td class="num green">${fmtBRL(totalReceitas)}</td><td class="num red">${fmtBRL(totalDespesas)}</td><td class="num ${corTotalSaldo}">${fmtBRL(totalReceitas-totalDespesas)}</td></tr></tfoot>
     </table></div>`;
 }
 // Busca todos os lançamentos de um fiel, opcionalmente filtrando por um
@@ -1128,8 +1132,8 @@ async function renderRelatorioFiel(){
   const total = lancs.reduce((s,l)=>s+l.valor,0);
   const rotuloPeriodo = (inicio || fim) ? 'Total no período' : 'Total geral';
   $('relFielResultado').innerHTML = `
-    <div class="list-row"><strong>${rotuloPeriodo}</strong><strong class="num">${fmtBRL(total)}</strong></div>
-    ${lancs.map(l=>`<div class="list-row"><span>${formatarDataBR(l.dataStr)} · ${l.categoriaNome}</span><span class="num">${fmtBRL(l.valor)}</span></div>`).join('')}
+    <div class="list-row"><strong>${rotuloPeriodo}</strong><strong class="num green">${fmtBRL(total)}</strong></div>
+    ${lancs.map(l=>`<div class="list-row"><span>${formatarDataBR(l.dataStr)} · ${l.categoriaNome}</span><span class="num green">${fmtBRL(l.valor)}</span></div>`).join('')}
     ${!lancs.length ? '<div class="empty">Nenhuma contribuição nesse período.</div>' : ''}
   `;
 }
@@ -2610,11 +2614,13 @@ if('serviceWorker' in navigator){
   });
 }
 
-// ---------- PWA: banner próprio de "Instalar app" ----------
-// O Chrome, sozinho, só oferece a instalação escondida num menu — aqui a
-// gente escuta o evento que ele dispara quando o app É instalável e mostra
-// um convite visível, com botão. Fechar esconde só até a próxima vez que
-// abrir o app (não é "pra sempre") — assim dá pra testar de novo fácil.
+// ---------- PWA: instalar o app ----------
+// Em vez de depender só do navegador avisar sozinho (o que nem sempre
+// acontece — regras internas do Chrome, e nunca no iPhone), agora tem um
+// botão fixo "Instalar app" na tela de login e dentro do menu lateral,
+// sempre visível (a não ser que o app já esteja instalado). Clicando: usa
+// a instalação nativa se o navegador oferecer, ou mostra o passo a passo
+// manual se não oferecer.
 let promptInstalacaoEvento = null;
 const CHAVE_DISMISS_INSTALL = 'softplus_install_dismissed_sessao';
 
@@ -2631,19 +2637,39 @@ function esconderBannerInstalar(){
   $('instalarBanner').classList.remove('active');
 }
 function mostrarBannerInstalar(textoHtml, mostrarBotaoInstalar){
-  if(appJaInstalado() || jaFechouNestaSessao()) return;
   $('instalarBannerTexto').innerHTML = textoHtml;
   $('btnInstalarApp').style.display = mostrarBotaoInstalar ? 'inline-flex' : 'none';
   $('instalarBanner').classList.add('active');
+}
+function atualizarBotoesInstalarFixos(){
+  const escondido = appJaInstalado() ? 'none' : 'inline-flex';
+  if($('btnInstalarLogin')) $('btnInstalarLogin').style.display = escondido;
+  if($('btnInstalarSidebar')) $('btnInstalarSidebar').style.display = escondido;
+}
+async function acionarInstalacao(){
+  if(promptInstalacaoEvento){
+    promptInstalacaoEvento.prompt();
+    const resultado = await promptInstalacaoEvento.userChoice;
+    promptInstalacaoEvento = null;
+    if(resultado.outcome === 'accepted') atualizarBotoesInstalarFixos();
+    return;
+  }
+  const ehIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const instrucao = ehIOS
+    ? '<strong>Como instalar</strong>No iPhone/iPad: toque em Compartilhar <span style="font-weight:600;">⬆</span> e depois em "Adicionar à Tela de Início".'
+    : '<strong>Como instalar</strong>Toque no menu (⋮ ou ≡) do navegador e escolha "Instalar app" ou "Adicionar à tela inicial". No computador, procure o ícone de instalar na barra de endereço.';
+  mostrarBannerInstalar(instrucao, false);
 }
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   promptInstalacaoEvento = e;
-  mostrarBannerInstalar(
-    '<strong>Instalar o SOFT+</strong>Acesso rápido, direto da tela inicial do seu celular.',
-    true
-  );
+  if(!appJaInstalado() && !jaFechouNestaSessao()){
+    mostrarBannerInstalar(
+      '<strong>Instalar o SOFT+</strong>Acesso rápido, direto da tela inicial do seu celular.',
+      true
+    );
+  }
 });
 
 $('btnInstalarApp').addEventListener('click', async () => {
@@ -2653,27 +2679,17 @@ $('btnInstalarApp').addEventListener('click', async () => {
   await promptInstalacaoEvento.userChoice;
   promptInstalacaoEvento = null;
 });
-
 $('btnFecharInstalarBanner').addEventListener('click', () => {
   esconderBannerInstalar();
   marcarFechadoNestaSessao();
 });
+$('btnInstalarLogin').addEventListener('click', acionarInstalacao);
+$('btnInstalarSidebar').addEventListener('click', acionarInstalacao);
 
 window.addEventListener('appinstalled', () => {
   esconderBannerInstalar();
   marcarFechadoNestaSessao();
+  atualizarBotoesInstalarFixos();
 });
 
-// Alguns navegadores (Safari/iPhone, e às vezes o Chrome do Android por
-// causa de regras internas de "engajamento") nunca disparam o evento
-// acima. Depois de alguns segundos, se nada apareceu ainda, mostramos um
-// aviso com o passo a passo manual — assim ninguém fica sem saber que dá
-// pra instalar, em nenhum aparelho.
-setTimeout(()=>{
-  if(promptInstalacaoEvento || appJaInstalado() || jaFechouNestaSessao()) return;
-  const ehIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  const instrucao = ehIOS
-    ? '<strong>Instalar o SOFT+</strong>Toque em Compartilhar <span style="font-weight:600;">⬆</span> e depois em "Adicionar à Tela de Início".'
-    : '<strong>Instalar o SOFT+</strong>Toque no menu ⋮ do navegador e escolha "Instalar app" ou "Adicionar à tela inicial".';
-  mostrarBannerInstalar(instrucao, false);
-}, 4000);
+atualizarBotoesInstalarFixos();

@@ -160,6 +160,21 @@ instalação continua sendo manual: Compartilhar → "Adicionar à Tela de
 Início". Posso adicionar uma dica na tela pra usuários de iPhone se
 for importante pro seu público.
 
+## Botão fixo de instalar (em vez de banner por tempo)
+Achei o motivo real do banner nunca aparecer: faltava um `id` num elemento
+de HTML que o JavaScript tentava atualizar — isso quebrava a função
+silenciosamente toda vez que era chamada. Corrigido.
+
+Além disso, troquei a abordagem: em vez de depender de um banner que só
+aparece se o navegador cooperar (ou depois de um tempo), agora tem um
+**botão fixo "📲 Instalar app"**, sempre visível:
+- Na tela de **login**, logo abaixo do card
+- Dentro do app, no **rodapé do menu lateral**, acima do "Sair"
+
+Clicando: usa a instalação nativa do navegador se ela estiver disponível,
+ou mostra o passo a passo manual (diferente pra iPhone e Android/desktop)
+se não estiver. O botão some sozinho se o app já estiver instalado.
+
 ## Correções: menu não rolava no celular, e banner de instalar
 Achei o motivo real do botão "Sair" sumir no celular: o menu lateral
 cresceu bastante (Painel, Lançamentos, Fiéis, Categorias, Relatórios,

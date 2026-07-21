@@ -43,7 +43,7 @@
   input,select{font-family:inherit; font-size:13.5px;}
 
   /* --- layout shells --- */
-  #authScreen{display:flex; min-height:100vh; align-items:center; justify-content:center; padding:24px;}
+  #authScreen{display:flex; flex-direction:column; min-height:100vh; align-items:center; justify-content:center; padding:24px;}
   #appShell{display:none; min-height:100vh;}
   #appShell.active{display:flex;}
 
@@ -194,6 +194,8 @@
   .stat-value{font-size:24px; font-weight:600; font-family:'IBM Plex Mono',monospace;}
   .stat-value.green{color:var(--green);}
   .stat-value.red{color:var(--red);}
+  .green{color:var(--green);}
+  .red{color:var(--red);}
 
   table{width:100%; border-collapse:collapse; font-size:13px;}
   th{text-align:left; color:var(--text-dim); font-weight:500; font-size:12px; padding:8px 10px; border-bottom:1px solid var(--line);}
@@ -287,6 +289,7 @@
         <button id="btnAuthToggle">Criar conta</button>
       </div>
     </div>
+    <button class="btn btn-sm" id="btnInstalarLogin" style="margin-top:16px;">📲 Instalar app no celular</button>
   </div>
 
   <!-- APP SHELL -->
@@ -318,6 +321,7 @@
       <button class="nav-btn" data-view="novaIgreja"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Nova Igreja</button>
 
       <div class="sidebar-foot">
+        <button class="btn btn-sm" id="btnInstalarSidebar" style="width:100%; margin-bottom:10px;">📲 Instalar app</button>
         <div class="user-chip">
           <div class="user-chip-info">
             <span id="userNomeChip">—</span>
@@ -992,7 +996,7 @@
 
   <div class="install-banner" id="instalarBanner">
     <img src="logo-simbolo.png" alt="">
-    <div class="install-banner-texto">
+    <div class="install-banner-texto" id="instalarBannerTexto">
       <strong>Instalar o SOFT+</strong>
       Acesso rápido, direto da tela inicial do seu celular.
     </div>
