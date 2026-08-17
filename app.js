@@ -307,6 +307,7 @@ function traduzErroAuth(code){
 }
 
 $('btnLogout').addEventListener('click', ()=> signOut(auth));
+$('btnSairSeletorIgreja').addEventListener('click', ()=> signOut(auth));
 
 onAuthStateChanged(auth, async (user)=>{
   if(user){
@@ -314,14 +315,26 @@ onAuthStateChanged(auth, async (user)=>{
     state.user = user;
     await carregarPerfil(user);
     await resgatarConvitesPendentes(user);
-    await carregarIgrejasDoUsuario(user);
-    $('authScreen').style.display = 'none';
-    $('appShell').className = 'active';
+    await buscarListaIgrejasDoUsuario(user);
     esconderCarregando();
+    $('authScreen').style.display = 'none';
+    if(state.igrejas.length === 0){
+      $('appShell').className = 'active';
+      switchView('novaIgreja');
+    } else if(state.igrejas.length === 1){
+      state.igrejaAtualId = state.igrejas[0].id;
+      $('igrejaSwitch').value = state.igrejaAtualId;
+      $('appShell').className = 'active';
+      await onIgrejaChange();
+      if(state.igrejas.some(i => i.precisaTrocarSenha)) abrirModalTrocarSenhaObrigatoria();
+    } else {
+      mostrarSeletorDeIgreja();
+    }
   } else {
     state.user = null;
     $('authScreen').style.display = 'flex';
     $('appShell').className = '';
+    if($('selecionarIgrejaScreen')) $('selecionarIgrejaScreen').style.display = 'none';
   }
 });
 
@@ -372,7 +385,9 @@ async function resgatarConvitesPendentes(user){
 
 // Busca em quais igrejas o usuário está, consultando o índice "membrosIndice"
 // (coleção de nível raiz, uma consulta simples e direta por uid).
-async function carregarIgrejasDoUsuario(user){
+// Só busca a lista de igrejas do usuário (sem entrar em nenhuma) — usado
+// no login, antes de mostrar a tela de escolher a igreja.
+async function buscarListaIgrejasDoUsuario(user){
   const q = query(collection(db, 'membrosIndice'), where('uid', '==', user.uid));
   const snaps = await getDocs(q);
   // Busca o nome ATUAL de cada igreja (em vez de confiar só no que estava
@@ -389,18 +404,51 @@ async function carregarIgrejasDoUsuario(user){
     return { id: dado.igrejaId, nome, papel: dado.papel, abas: dado.abas || TODAS_ABAS, precisaTrocarSenha: !!dado.precisaTrocarSenha };
   }));
   const sel = $('igrejaSwitch');
+  sel.innerHTML = state.igrejas.length
+    ? state.igrejas.map(i => `<option value="${i.id}">${i.nome}</option>`).join('')
+    : `<option>Nenhuma igreja ainda</option>`;
+}
+
+// Recarrega a lista e mantém a igreja atual selecionada — usado durante o
+// uso normal do app (depois de criar igreja, editar nome, importar, etc.),
+// não no primeiro login (que passa pela tela de escolha).
+async function carregarIgrejasDoUsuario(user){
+  await buscarListaIgrejasDoUsuario(user);
   if(state.igrejas.length === 0){
-    sel.innerHTML = `<option>Nenhuma igreja ainda</option>`;
     switchView('novaIgreja');
     return;
   }
-  sel.innerHTML = state.igrejas.map(i => `<option value="${i.id}">${i.nome}</option>`).join('');
   if(!state.igrejaAtualId || !state.igrejas.some(i => i.id === state.igrejaAtualId)){
     state.igrejaAtualId = state.igrejas[0].id;
   }
-  sel.value = state.igrejaAtualId;
+  $('igrejaSwitch').value = state.igrejaAtualId;
   await onIgrejaChange();
   if(state.igrejas.some(i => i.precisaTrocarSenha)) abrirModalTrocarSenhaObrigatoria();
+}
+
+// Tela de "escolher em qual igreja entrar", mostrada no login quando o
+// usuário tem acesso a mais de uma igreja.
+function mostrarSeletorDeIgreja(){
+  const lista = [...state.igrejas].sort((a,b) =>
+    (a.nome||'').localeCompare(b.nome||'', 'pt-BR', {sensitivity:'base'}));
+  $('seletorIgrejaLista').innerHTML = lista.map(i => `
+    <button class="seletor-igreja-card" type="button" data-id="${i.id}">
+      <span class="seletor-igreja-nome">${i.nome}</span>
+      <span class="papel-badge">${PAPEL_LABEL[i.papel] || i.papel}</span>
+    </button>`).join('');
+  $('seletorIgrejaLista').querySelectorAll('[data-id]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      state.igrejaAtualId = btn.dataset.id;
+      $('igrejaSwitch').value = state.igrejaAtualId;
+      $('selecionarIgrejaScreen').style.display = 'none';
+      $('appShell').className = 'active';
+      mostrarCarregando();
+      await onIgrejaChange();
+      esconderCarregando();
+      if(state.igrejas.some(i => i.precisaTrocarSenha)) abrirModalTrocarSenhaObrigatoria();
+    });
+  });
+  $('selecionarIgrejaScreen').style.display = 'flex';
 }
 
 $('igrejaSwitch').addEventListener('change', async (e)=>{

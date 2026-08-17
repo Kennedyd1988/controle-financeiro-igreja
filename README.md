@@ -3,6 +3,14 @@
 App multi-igreja de controle financeiro, com Firebase (Auth + Firestore) como backend
 e hospedagem estática no GitHub Pages.
 
+## Escolher a igreja no login
+Quem tem acesso a **mais de uma igreja** agora vê uma tela de escolha logo
+depois de entrar, antes de cair em qualquer uma delas — mostra o nome de
+cada igreja e o papel do usuário nela (Administrador/Cadastrador/Leitura).
+Quem tem acesso a **só uma igreja** continua entrando direto nela, sem essa
+tela extra (não faz sentido perguntar quando não há escolha). Dá pra trocar
+de igreja depois a qualquer momento pelo menu lateral, como já era.
+
 ## Arquivos
 - `index.html` — telas do app
 - `app.js` — toda a lógica (login, Firestore, telas)

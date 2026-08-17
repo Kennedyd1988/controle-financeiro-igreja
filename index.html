@@ -47,6 +47,18 @@
   #authScreen{display:flex; flex-direction:column; min-height:100vh; align-items:center; justify-content:center; padding:24px;}
   #appShell{display:none; min-height:100vh;}
   #appShell.active{display:flex;}
+  #selecionarIgrejaScreen{
+    display:none; flex-direction:column; min-height:100vh; align-items:center;
+    justify-content:center; padding:24px;
+  }
+  .seletor-igreja-lista{display:flex; flex-direction:column; gap:10px; margin-top:20px; width:100%;}
+  .seletor-igreja-card{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    width:100%; text-align:left; background:var(--surface-2); border:1px solid var(--line);
+    border-radius:10px; padding:14px 16px; font-size:14px; font-weight:500; color:var(--text);
+  }
+  .seletor-igreja-card:hover{border-color:var(--brand); background:var(--brand-dim);}
+  .seletor-igreja-nome{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 
   .auth-card{
     width:100%; max-width:380px; background:var(--surface); border:1px solid var(--line);
@@ -394,7 +406,19 @@
           <button id="btnAuthToggle">Criar conta</button>
         </div>
       </div>
-      <button class="btn btn-sm" id="btnInstalarLogin" style="margin-top:16px;">📲 Instalar app no celular</button>
+      <button class="btn btn-sm" id="btnInstalarLogin" style="margin-top:16px;">⬇️ Instalar app no celular</button>
+    </div>
+  </div>
+
+  <!-- SELECIONAR IGREJA (aparece no login quando há mais de uma) -->
+  <div id="selecionarIgrejaScreen">
+    <div class="auth-card">
+      <img src="logo-horizontal.png" alt="SOFT+" style="height:30px; width:auto; margin-bottom:6px;">
+      <div class="auth-sub" style="margin-bottom:0;">Em qual igreja você quer entrar?</div>
+      <div class="seletor-igreja-lista" id="seletorIgrejaLista"></div>
+      <div class="auth-toggle" style="margin-top:18px;">
+        <button id="btnSairSeletorIgreja">Sair</button>
+      </div>
     </div>
   </div>
 
@@ -427,7 +451,7 @@
       <button class="nav-btn" data-view="novaIgreja"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Nova Igreja</button>
 
       <div class="sidebar-foot">
-        <button class="btn btn-sm" id="btnInstalarSidebar" style="width:100%; margin-bottom:10px;">📲 Instalar app</button>
+        <button class="btn btn-sm" id="btnInstalarSidebar" style="width:100%; margin-bottom:10px;">⬇️ Instalar app</button>
         <div class="user-chip">
           <div class="user-avatar" id="userAvatar">—</div>
           <div class="user-chip-info">
