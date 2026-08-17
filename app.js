@@ -397,11 +397,15 @@ async function buscarListaIgrejasDoUsuario(user){
   state.igrejas = await Promise.all(snaps.docs.map(async (d) => {
     const dado = d.data();
     let nome = dado.igrejaNome;
+    let logo = null;
     try{
       const igSnap = await getDoc(doc(db,'igrejas', dado.igrejaId));
-      if(igSnap.exists() && igSnap.data().nome) nome = igSnap.data().nome;
+      if(igSnap.exists()){
+        if(igSnap.data().nome) nome = igSnap.data().nome;
+        logo = igSnap.data().logo || null;
+      }
     } catch(e){ /* usa o nome salvo no índice como respaldo */ }
-    return { id: dado.igrejaId, nome, papel: dado.papel, abas: dado.abas || TODAS_ABAS, precisaTrocarSenha: !!dado.precisaTrocarSenha };
+    return { id: dado.igrejaId, nome, logo, papel: dado.papel, abas: dado.abas || TODAS_ABAS, precisaTrocarSenha: !!dado.precisaTrocarSenha };
   }));
   const sel = $('igrejaSwitch');
   sel.innerHTML = state.igrejas.length
@@ -433,6 +437,7 @@ function mostrarSeletorDeIgreja(){
     (a.nome||'').localeCompare(b.nome||'', 'pt-BR', {sensitivity:'base'}));
   $('seletorIgrejaLista').innerHTML = lista.map(i => `
     <button class="seletor-igreja-card" type="button" data-id="${i.id}">
+      <img class="seletor-igreja-logo" src="${i.logo || 'logo-simbolo.png'}" alt="">
       <span class="seletor-igreja-nome">${i.nome}</span>
       <span class="papel-badge">${PAPEL_LABEL[i.papel] || i.papel}</span>
     </button>`).join('');

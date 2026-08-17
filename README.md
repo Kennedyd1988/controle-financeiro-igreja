@@ -5,11 +5,20 @@ e hospedagem estática no GitHub Pages.
 
 ## Escolher a igreja no login
 Quem tem acesso a **mais de uma igreja** agora vê uma tela de escolha logo
-depois de entrar, antes de cair em qualquer uma delas — mostra o nome de
-cada igreja e o papel do usuário nela (Administrador/Cadastrador/Leitura).
-Quem tem acesso a **só uma igreja** continua entrando direto nela, sem essa
-tela extra (não faz sentido perguntar quando não há escolha). Dá pra trocar
-de igreja depois a qualquer momento pelo menu lateral, como já era.
+depois de entrar, antes de cair em qualquer uma delas — mostra a **logo**
+de cada igreja (a mesma cadastrada em Dados da Igreja; se não tiver
+nenhuma, mostra o símbolo do SOFT+ no lugar), o nome e o papel do usuário
+nela (Administrador/Cadastrador/Leitura). Quem tem acesso a **só uma
+igreja** continua entrando direto nela, sem essa tela extra (não faz
+sentido perguntar quando não há escolha). Dá pra trocar de igreja depois a
+qualquer momento pelo menu lateral, como já era.
+
+## Sobre cache e atualizações (importante pra quem for editar o código)
+O `app.js` agora é carregado com um número de versão (`app.js?v=2`), e o
+`sw.js` tem sua própria versão de cache. **Toda vez que o `app.js` mudar**,
+suba os dois números junto (o `?v=` no `index.html` e o `CACHE_NAME` no
+`sw.js`) — sem isso, o navegador de quem já usava o app pode continuar
+mostrando uma versão antiga por um tempo.
 
 ## Arquivos
 - `index.html` — telas do app
