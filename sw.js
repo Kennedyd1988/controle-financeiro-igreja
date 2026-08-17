@@ -4,11 +4,11 @@
 // pro GitHub apareça sozinha na próxima vez que o app abrir com conexão,
 // sem precisar desinstalar nada.
 
-const CACHE_NAME = 'softplus-cache-v3';
+const CACHE_NAME = 'softplus-cache-v4';
 const ARQUIVOS_BASE = [
   './',
   './index.html',
-  './app.js',
+  './app.js?v=1',
   './firebase-config.js',
   './manifest.json',
   './icon-192.png',
@@ -40,7 +40,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   event.respondWith(
-    fetch(event.request)
+    // "no-store" força ignorar o cache HTTP do próprio navegador (não só
+    // o nosso cache do service worker) — sem isso, o navegador podia
+    // devolver uma cópia antiga do arquivo mesmo quando a gente pede pra
+    // buscar de novo na rede, escondendo atualizações por um tempo.
+    fetch(event.request, { cache: 'no-store' })
       .then((resposta) => {
         const copia = resposta.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copia));
