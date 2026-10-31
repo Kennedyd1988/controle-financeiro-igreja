@@ -154,15 +154,35 @@ service cloud.firestore {
         allow write: if podeEditarAba(igrejaId, 'cadastros');
       }
 
+      // Conciliação bancária: quem tem a aba "financeiro" pode alterar SOMENTE
+      // os campos de conciliação de um lançamento (mesmo em competência
+      // bloqueada — conciliar não muda o valor). Já um lançamento conciliado
+      // não pode ser editado nem excluído por quem só tem "lancamentos":
+      // precisa desconciliar antes. (get(...) trata lançamentos antigos sem o campo.)
       match /lancamentos/{docId} {
-        allow read: if temAcessoAba(igrejaId, 'lancamentos');
+        allow read: if temAcessoAba(igrejaId, 'lancamentos') || temAcessoAba(igrejaId, 'financeiro');
         allow create: if podeEditarAba(igrejaId, 'lancamentos') &&
           !competenciaBloqueada(igrejaId, request.resource.data.competenciaKey);
-        allow update: if podeEditarAba(igrejaId, 'lancamentos') &&
-          !competenciaBloqueada(igrejaId, resource.data.competenciaKey) &&
-          !competenciaBloqueada(igrejaId, request.resource.data.competenciaKey);
+        allow update: if (
+            podeEditarAba(igrejaId, 'lancamentos') &&
+            resource.data.get('conciliado', false) != true &&
+            !competenciaBloqueada(igrejaId, resource.data.competenciaKey) &&
+            !competenciaBloqueada(igrejaId, request.resource.data.competenciaKey)
+          ) || (
+            podeEditarAba(igrejaId, 'financeiro') &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['conciliado','contaDataConc','conciliadoEm','conciliadoPor'])
+          );
         allow delete: if podeEditarAba(igrejaId, 'lancamentos') &&
+          resource.data.get('conciliado', false) != true &&
           !competenciaBloqueada(igrejaId, resource.data.competenciaKey);
+      }
+
+      // Contas bancárias / caixa. Leitura também para quem lança (precisa
+      // escolher a conta no lançamento); escrita só com a aba "financeiro".
+      match /contas/{contaId} {
+        allow read: if temAcessoAba(igrejaId, 'lancamentos') || temAcessoAba(igrejaId, 'financeiro');
+        allow write: if podeEditarAba(igrejaId, 'financeiro');
       }
 
       match /competencias/{docId} {

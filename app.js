@@ -28,6 +28,7 @@ const ABAS_CONFIGURAVEIS = [
   { id: 'relatorios', label: 'Relatórios' },
   { id: 'competencias', label: 'Competências' },
   { id: 'campanhas', label: 'Campanhas' },
+  { id: 'financeiro', label: 'Financeiro (contas, extrato e conciliação)' },
 ];
 const TODAS_ABAS = ABAS_CONFIGURAVEIS.map(a => a.id);
 
@@ -70,6 +71,7 @@ const state = {
   editandoLancCompetenciaOriginal: null,
   lancModalOrigemPainel: false,
   campanhas: [],
+  contas: [],
   campanhaAtualId: null,
   campanhaAtualDados: null,
   editandoCampanhaId: null,
@@ -493,18 +495,20 @@ async function carregarDadosDaIgreja(){
   const id = state.igrejaAtualId;
   if(!id) return;
   const temCadastros = temAcesso('cadastros');
-  const [igSnap, catR, catD, grp, crg] = await Promise.all([
+  const [igSnap, catR, catD, grp, crg, ctas] = await Promise.all([
     getDoc(doc(db, 'igrejas', id)).catch(()=>({ exists:()=>false })),
     temCadastros ? buscarSeguro(getDocs(collection(db,'igrejas',id,'categoriasReceita')), []) : [],
     temCadastros ? buscarSeguro(getDocs(collection(db,'igrejas',id,'categoriasDespesa')), []) : [],
     temCadastros ? buscarSeguro(getDocs(collection(db,'igrejas',id,'grupos')), []) : [],
     temCadastros ? buscarSeguro(getDocs(collection(db,'igrejas',id,'cargos')), []) : [],
+    (temAcesso('lancamentos') || temAcesso('financeiro')) ? buscarSeguro(getDocs(collection(db,'igrejas',id,'contas')), []) : [],
   ]);
   state.igrejaDados = igSnap.exists() ? igSnap.data() : {};
   state.categoriasReceita = catR;
   state.categoriasDespesa = catD;
   state.grupos = grp;
   state.cargos = crg;
+  state.contas = ctas;
   // Fiéis não são mais carregados por inteiro aqui — a lista cresce sem
   // limite com o tempo, então cada tela busca só o que precisa (ver
   // buscarFieisPagina e a busca com combobox).
@@ -592,7 +596,7 @@ function refreshView(name){
     painel: renderPainel, lancamentos: renderLancamentos, fieis: renderFieis,
     cadastros: renderCadastros, relatorios: renderRelatorios, competencias: renderCompetencias,
     igreja: renderIgreja, usuarios: renderUsuarios, novaIgreja: ()=>{},
-    importar: renderImportar, campanhas: renderCampanhas,
+    importar: renderImportar, campanhas: renderCampanhas, financeiro: renderFinanceiro,
   };
   if(map[name]) comCarregando(Promise.resolve(map[name]()));
 }
@@ -818,17 +822,19 @@ function desenharTabelaLancamentos(){
   $('btnLancMais').style.display = state.lancTemMais ? 'inline-flex' : 'none';
   $('lancTbody').innerHTML = lancs.map(l => {
     const bloqueado = isCompetenciaBloqueada(l.mes, l.ano);
+    const conciliado = !!l.conciliado;
+    const nomeConta = l.contaId ? (state.contas.find(c=>c.id===l.contaId)?.nome || '') : '';
     return `
     <tr>
       <td>${l.dataStr ? formatarDataBR(l.dataStr) : '—'}</td>
       <td>${l.mes ? `${MESES[l.mes-1]}/${l.ano}` : '—'}</td>
       <td><span class="tag ${l.tipo}">${l.tipo}</span></td>
-      <td>${l.categoriaNome||''}</td>
+      <td>${l.categoriaNome||''}${nomeConta ? `<div class="abas-hint">🏦 ${nomeConta}</div>` : ''}</td>
       <td>${l.descricao||'—'}</td>
       <td>${l.membroNome||'—'}</td>
       <td class="num">${fmtBRL(l.valor)}</td>
       <td>
-        ${bloqueado ? '<span class="tag locked">bloqueado</span>' :
+        ${bloqueado ? '<span class="tag locked">bloqueado</span>' : conciliado ? '<span class="tag locked" title="Desconcilie em Financeiro para editar">conciliado</span>' :
           (editavel ? `<button class="btn btn-sm" data-edit="${l.id}">Editar</button>
            <button class="btn btn-sm btn-danger" data-del="${l.id}">Excluir</button>` : '')}
       </td>
@@ -864,6 +870,11 @@ function abrirModalLancamento(lanc){
   $('lFormValor').value = lanc ? lanc.valor : '';
   popularCategoriaSelect();
   $('lFormCategoria').value = lanc ? lanc.categoriaId : '';
+  // Conta só aparece (e só é obrigatória) quando a igreja já cadastrou alguma.
+  const contasOrd = ordenarPorNome(state.contas);
+  $('lFormContaWrap').style.display = contasOrd.length ? 'block' : 'none';
+  $('lFormConta').innerHTML = `<option value="">Selecione...</option>` + contasOrd.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
+  $('lFormConta').value = lanc ? (lanc.contaId||'') : (contasOrd.find(c=>c.principal)?.id || '');
   $('lFormFiel').value = lanc ? (lanc.membroId||'') : '';
   $('lFormFielBusca').value = lanc ? (lanc.membroNome||'') : '';
   $('lFormFielLista').classList.remove('active');
@@ -897,7 +908,8 @@ function popularCategoriaSelect(){
 $('btnCancelarLanc').addEventListener('click', ()=> $('modalLancamento').classList.remove('active'));
 $('btnSalvarLanc').addEventListener('click', async ()=>{
   if(!validarObrigatorios([
-    {id:'lFormData', nome:'Data'}, {id:'lFormCategoria', nome:'Categoria'}, {id:'lFormValor', nome:'Valor'}
+    {id:'lFormData', nome:'Data'}, {id:'lFormCategoria', nome:'Categoria'}, {id:'lFormValor', nome:'Valor'},
+    ...(state.contas.length ? [{id:'lFormConta', nome:'Conta'}] : [])
   ])) return;
   const tipo = $('lFormTipo').value;
   const dataStr = $('lFormData').value;
@@ -923,6 +935,7 @@ $('btnSalvarLanc').addEventListener('click', async ()=>{
     tipo, dataStr, mes, ano, competenciaKey: key, categoriaId, categoriaNome,
     descricao: $('lFormDescricao').value.trim(), valor,
     membroId, membroNome, bloqueado: false,
+    ...camposConta($('lFormConta').value || null, dataStr, tipo, valor),
     criadoPor: state.user.uid, criadoPorNome: state.perfil.nome, atualizadoEm: serverTimestamp()
   };
   try{
@@ -1167,6 +1180,322 @@ $('btnCadAdd').addEventListener('click', async ()=>{
 });
 
 
+// ---------- FINANCEIRO (contas, extrato, conciliação) ----------
+// Por que campos "extras" no lançamento (contaData, contaEntrada, contaSaida,
+// contaDataConc): o Firestore só indexa sozinho filtros em UM campo. Juntar
+// "conta = X" com "data entre A e B" exigiria índice composto manual. Então
+// guardamos a chave "contaId|AAAA-MM-DD" num único campo de texto e fazemos
+// um único filtro de intervalo nele (e a soma é feita no servidor, via
+// agregação). contaDataConc só existe quando o lançamento está conciliado,
+// o que permite somar só os conciliados com o mesmo truque.
+function camposConta(contaId, dataStr, tipo, valor){
+  if(!contaId || !dataStr) return { contaId:null, contaData:null, contaEntrada:0, contaSaida:0 };
+  return {
+    contaId, contaData: `${contaId}|${dataStr}`,
+    contaEntrada: tipo === 'receita' ? valor : 0,
+    contaSaida: tipo === 'despesa' ? valor : 0,
+  };
+}
+const pad2 = (n) => String(n).padStart(2,'0');
+function iniMesISO(ano, mes){ return `${ano}-${pad2(mes)}-01`; }
+function iniProxMesISO(ano, mes){ return mes === 12 ? `${ano+1}-01-01` : `${ano}-${pad2(mes+1)}-01`; }
+const maiorData = (a,b) => a > b ? a : b;
+
+async function somaConta(conta, deIncl, ateExcl, conciliados){
+  if(ateExcl <= deIncl) return { entradas:0, saidas:0 };
+  const campo = conciliados ? 'contaDataConc' : 'contaData';
+  const q = query(collection(db,'igrejas',state.igrejaAtualId,'lancamentos'),
+    where(campo,'>=',`${conta.id}|${deIncl}`), where(campo,'<',`${conta.id}|${ateExcl}`));
+  try{
+    const snap = await getAggregateFromServer(q, { e: sum('contaEntrada'), s: sum('contaSaida') });
+    return { entradas: snap.data().e || 0, saidas: snap.data().s || 0 };
+  } catch(e){
+    const docs = await getDocs(q);
+    return docs.docs.reduce((t,d)=>({ entradas: t.entradas+(d.data().contaEntrada||0), saidas: t.saidas+(d.data().contaSaida||0) }), { entradas:0, saidas:0 });
+  }
+}
+// Saldo imediatamente ANTES de "ateExcl" (saldo inicial + movimentos desde a data do saldo inicial).
+async function saldoDaContaAntesDe(conta, ateExcl, conciliados){
+  const s = await somaConta(conta, conta.dataSaldo, ateExcl, conciliados);
+  return (conta.saldoInicial||0) + s.entradas - s.saidas;
+}
+async function movimentosDaConta(conta, deIncl, ateExcl){
+  const q = query(collection(db,'igrejas',state.igrejaAtualId,'lancamentos'),
+    where('contaData','>=',`${conta.id}|${deIncl}`), where('contaData','<',`${conta.id}|${ateExcl}`), orderBy('contaData'));
+  const snaps = await getDocs(q);
+  return snaps.docs.map(d => ({ id:d.id, ...d.data() }));
+}
+const historicoDoMov = (l) => [l.categoriaNome, l.descricao, l.membroNome].filter(Boolean).join(' - ');
+
+let finInit = false, finAba = 'contas';
+function opcoesContas(){ return ordenarPorNome(state.contas).map(c=>`<option value="${c.id}">${c.nome}</option>`).join(''); }
+async function renderFinanceiro(){
+  if(!finInit){
+    finInit = true;
+    populaMesAno('finExtMes','finExtAno'); populaMesAno('finConcMes','finConcAno');
+    let anos = '';
+    for(let y = hoje.getFullYear()-3; y <= hoje.getFullYear()+1; y++) anos += `<option value="${y}" ${y===hoje.getFullYear()?'selected':''}>${y}</option>`;
+    $('finSaldosAno').innerHTML = anos;
+    document.querySelectorAll('.fin-tab').forEach(b => b.addEventListener('click', ()=>{ finAba = b.dataset.fin; renderFinanceiro(); }));
+    ['finSaldosConta','finSaldosAno'].forEach(id => $(id).addEventListener('change', desenharSaldosMensais));
+    ['finExtConta','finExtMes','finExtAno'].forEach(id => $(id).addEventListener('change', renderExtrato));
+    ['finConcConta','finConcMes','finConcAno','finConcFiltro'].forEach(id => $(id).addEventListener('change', renderConciliacao));
+    $('finConcSaldoBanco').addEventListener('input', atualizarVereditoConciliacao);
+    $('btnNovaConta').addEventListener('click', ()=> abrirModalConta(null));
+    $('btnCancelarConta').addEventListener('click', ()=> $('modalConta').classList.remove('active'));
+    $('btnSalvarConta').addEventListener('click', salvarConta);
+    $('btnPdfExtrato').addEventListener('click', gerarPdfExtrato);
+    $('btnAtribuirConta').addEventListener('click', atribuirContaEmLote);
+    $('btnConcMarcarTodos').addEventListener('click', ()=> marcarVisiveis(true));
+    $('btnConcDesmarcarTodos').addEventListener('click', ()=> marcarVisiveis(false));
+  }
+  document.querySelectorAll('.fin-tab').forEach(b => b.classList.toggle('active', b.dataset.fin === finAba));
+  ['contas','extrato','concil'].forEach(n => $('finSec-'+n).style.display = (n === finAba) ? 'block' : 'none');
+  // contas são relidas aqui para refletir mudanças feitas em outra aba/aparelho
+  state.contas = await buscarSeguro(getDocs(collection(db,'igrejas',state.igrejaAtualId,'contas')), state.contas);
+  const ops = opcoesContas();
+  ['finSaldosConta','finExtConta','finConcConta','finAtribConta'].forEach(id => {
+    const atual = $(id).value; $(id).innerHTML = ops || '<option value="">Nenhuma conta cadastrada</option>';
+    if(atual && state.contas.some(c=>c.id===atual)) $(id).value = atual;
+  });
+  const editavel = podeEditarAba('financeiro');
+  $('btnNovaConta').style.display = editavel ? 'inline-flex' : 'none';
+  $('finAtribCard').style.display = (editavel && podeEditarAba('lancamentos')) ? 'block' : 'none';
+  if(finAba === 'contas'){ desenharListaContas(); await desenharSaldosMensais(); }
+  else if(finAba === 'extrato') await renderExtrato();
+  else await renderConciliacao();
+}
+
+function contaPorId(id){ return state.contas.find(c=>c.id===id); }
+function desenharListaContas(){
+  const editavel = podeEditarAba('financeiro');
+  const lista = ordenarPorNome(state.contas);
+  $('finContasLista').innerHTML = lista.length ? lista.map(c => `
+    <div class="list-row" style="gap:10px; flex-wrap:wrap;">
+      <span style="flex:1; min-width:180px;"><b>${c.nome}</b>${c.principal ? ' <span class="tag locked">principal</span>' : ''}
+        <div class="abas-hint">${c.tipo === 'caixa' ? 'Caixa (dinheiro)' : [c.banco, c.finalConta ? 'final '+c.finalConta : ''].filter(Boolean).join(' · ') || 'Conta bancária'}
+        · saldo inicial ${fmtBRL(c.saldoInicial||0)} em ${formatarDataBR(c.dataSaldo)}</div></span>
+      ${editavel ? `<button class="btn btn-sm" data-conta-edit="${c.id}">Editar</button><button class="btn btn-sm btn-danger" data-conta-del="${c.id}">Excluir</button>` : ''}
+    </div>`).join('') : `<div class="empty">Nenhuma conta cadastrada. Cadastre a conta bancária (e, se quiser, um "Caixa") para começar.</div>`;
+  $('finContasLista').querySelectorAll('[data-conta-edit]').forEach(b => b.addEventListener('click', ()=> abrirModalConta(contaPorId(b.dataset.contaEdit))));
+  $('finContasLista').querySelectorAll('[data-conta-del]').forEach(b => b.addEventListener('click', async ()=>{
+    if(await existeVinculo('lancamentos','contaId', b.dataset.contaDel)){
+      toast('Não é possível excluir: essa conta tem lançamentos vinculados.', true); return;
+    }
+    if(!confirm('Excluir esta conta?')) return;
+    await deleteDoc(doc(db,'igrejas',state.igrejaAtualId,'contas', b.dataset.contaDel));
+    toast('Conta excluída.'); renderFinanceiro();
+  }));
+}
+function abrirModalConta(c){
+  state.editandoContaId = c ? c.id : null;
+  $('modalContaTitulo').textContent = c ? 'Editar conta' : 'Nova conta';
+  $('cNome').value = c?.nome || ''; $('cTipo').value = c?.tipo || 'banco';
+  $('cBanco').value = c?.banco || ''; $('cFinal').value = c?.finalConta || '';
+  $('cSaldoInicial').value = c ? (c.saldoInicial ?? 0) : '';
+  $('cDataSaldo').value = c?.dataSaldo || '';
+  $('cPrincipal').checked = !!c?.principal || (!c && !state.contas.length);
+  $('modalConta').classList.add('active');
+}
+async function salvarConta(){
+  if(!validarObrigatorios([{id:'cNome',nome:'Nome da conta'},{id:'cSaldoInicial',nome:'Saldo inicial'},{id:'cDataSaldo',nome:'Data do saldo inicial'}])) return;
+  const btn = $('btnSalvarConta'); btn.disabled = true;
+  const payload = {
+    nome: $('cNome').value.trim(), tipo: $('cTipo').value, banco: $('cBanco').value.trim(),
+    finalConta: $('cFinal').value.trim(), saldoInicial: parseFloat($('cSaldoInicial').value) || 0,
+    dataSaldo: $('cDataSaldo').value, principal: $('cPrincipal').checked,
+  };
+  try{
+    const colRef = collection(db,'igrejas',state.igrejaAtualId,'contas');
+    let id = state.editandoContaId;
+    if(id) await updateDoc(doc(colRef,id), payload); else id = (await addDoc(colRef, { ...payload, criadoEm: serverTimestamp() })).id;
+    if(payload.principal){
+      // só uma conta principal por igreja
+      const outras = state.contas.filter(c => c.id !== id && c.principal);
+      if(outras.length){ const b = writeBatch(db); outras.forEach(o => b.update(doc(colRef,o.id), { principal:false })); await b.commit(); }
+    }
+    $('modalConta').classList.remove('active'); toast('Conta salva!'); await carregarDadosDaIgreja(); renderFinanceiro();
+  } catch(e){ toast('Erro ao salvar: '+e.message, true); }
+  finally { btn.disabled = false; }
+}
+
+async function desenharSaldosMensais(){
+  const conta = contaPorId($('finSaldosConta').value);
+  if(!conta){ $('finSaldosTabela').innerHTML = `<div class="empty">Cadastre uma conta para ver os saldos.</div>`; return; }
+  $('finSaldosTabela').innerHTML = '<div class="empty">Calculando...</div>';
+  const ano = parseInt($('finSaldosAno').value);
+  const meses = await Promise.all(Array.from({length:12}, async (_,i) => {
+    const ini = iniMesISO(ano, i+1), fim = iniProxMesISO(ano, i+1);
+    const de = maiorData(ini, conta.dataSaldo);
+    const mov = await somaConta(conta, de, fim, false);
+    const anterior = await saldoDaContaAntesDe(conta, de);
+    return { mes:i+1, anterior: ini < conta.dataSaldo && fim <= conta.dataSaldo ? null : (ini < conta.dataSaldo ? conta.saldoInicial||0 : anterior), ...mov };
+  }));
+  $('finSaldosTabela').innerHTML = `<div class="table-scroll"><table>
+    <thead><tr><th>Mês</th><th style="text-align:right;">Saldo inicial</th><th style="text-align:right;">Entradas</th><th style="text-align:right;">Saídas</th><th style="text-align:right;">Saldo final</th></tr></thead>
+    <tbody>${meses.map(m => m.anterior === null
+      ? `<tr><td>${MESES[m.mes-1]}</td><td colspan="4" style="color:var(--text-dim);">anterior à data do saldo inicial</td></tr>`
+      : `<tr><td>${MESES[m.mes-1]}</td><td class="num" style="text-align:right;">${fmtBRL(m.anterior)}</td><td class="num green" style="text-align:right;">${fmtBRL(m.entradas)}</td><td class="num red" style="text-align:right;">${fmtBRL(m.saidas)}</td><td class="num" style="text-align:right;"><b>${fmtBRL(m.anterior + m.entradas - m.saidas)}</b></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+// ----- Extrato -----
+async function montarExtrato(conta, mes, ano){
+  const ini = iniMesISO(ano, mes), fim = iniProxMesISO(ano, mes);
+  const de = maiorData(ini, conta.dataSaldo);
+  const anterior = ini <= conta.dataSaldo ? (conta.saldoInicial||0) : await saldoDaContaAntesDe(conta, ini);
+  const movs = fim <= conta.dataSaldo ? [] : await movimentosDaConta(conta, de, fim);
+  let saldo = anterior, entradas = 0, saidas = 0;
+  const linhas = movs.map(l => {
+    saldo += (l.contaEntrada||0) - (l.contaSaida||0); entradas += l.contaEntrada||0; saidas += l.contaSaida||0;
+    return { ...l, saldo };
+  });
+  return { anterior, entradas, saidas, final: anterior + entradas - saidas, linhas };
+}
+async function renderExtrato(){
+  const conta = contaPorId($('finExtConta').value);
+  if(!conta){ $('finExtResumo').innerHTML = ''; $('finExtTbody').innerHTML = `<tr><td colspan="6" class="empty">Cadastre uma conta para ver o extrato.</td></tr>`; return; }
+  const mes = parseInt($('finExtMes').value), ano = parseInt($('finExtAno').value);
+  $('finExtTbody').innerHTML = `<tr><td colspan="6" class="empty">Carregando...</td></tr>`;
+  const ex = await montarExtrato(conta, mes, ano);
+  $('finExtResumo').innerHTML = `
+    <div><div class="stat-label">Saldo anterior</div><div class="num">${fmtBRL(ex.anterior)}</div></div>
+    <div><div class="stat-label">Entradas</div><div class="num green">${fmtBRL(ex.entradas)}</div></div>
+    <div><div class="stat-label">Saídas</div><div class="num red">${fmtBRL(ex.saidas)}</div></div>
+    <div><div class="stat-label">Saldo final</div><div class="num"><b>${fmtBRL(ex.final)}</b></div></div>`;
+  $('finExtTbody').innerHTML = ex.linhas.length ? ex.linhas.map(l => `<tr>
+      <td>${formatarDataBR(l.dataStr)}</td><td>${historicoDoMov(l)}</td>
+      <td class="num green" style="text-align:right;">${l.contaEntrada ? fmtBRL(l.contaEntrada) : ''}</td>
+      <td class="num red" style="text-align:right;">${l.contaSaida ? fmtBRL(l.contaSaida) : ''}</td>
+      <td class="num" style="text-align:right;">${fmtBRL(l.saldo)}</td>
+      <td>${l.conciliado ? '<span class="tag locked">conciliado</span>' : ''}</td></tr>`).join('')
+    : `<tr><td colspan="6" class="empty">Nenhum movimento nesta conta no mês.</td></tr>`;
+}
+async function gerarPdfExtrato(){
+  const conta = contaPorId($('finExtConta').value);
+  if(!conta){ toast('Cadastre uma conta primeiro.', true); return; }
+  const btn = $('btnPdfExtrato'); btn.disabled = true; toast('Gerando PDF...');
+  try{
+    const mes = parseInt($('finExtMes').value), ano = parseInt($('finExtAno').value);
+    const ex = await montarExtrato(conta, mes, ano);
+    const { jsPDF } = window.jspdf; const pdf = new jsPDF();
+    const titulo = `EXTRATO — ${conta.nome.toUpperCase()} — ${MESES[mes-1].toUpperCase()}/${ano}`;
+    let y = cabecalhoRelatorioPdf(pdf, titulo);
+    const corpo = [
+      ['', 'SALDO ANTERIOR', '', '', fmtBRL(ex.anterior)],
+      ...ex.linhas.map(l => [formatarDataBR(l.dataStr), historicoDoMov(l), l.contaEntrada ? fmtBRL(l.contaEntrada) : '', l.contaSaida ? fmtBRL(l.contaSaida) : '', fmtBRL(l.saldo)]),
+      ['', 'SALDO FINAL', fmtBRL(ex.entradas), fmtBRL(ex.saidas), fmtBRL(ex.final)],
+    ];
+    pdf.autoTable({ startY:y, head:[['Data','Histórico','Entrada','Saída','Saldo']], body: corpo, theme:'grid',
+      styles:{fontSize:7.5, cellPadding:1.4}, headStyles:{fillColor:[13,79,196]}, margin:{left:14,right:14,bottom:12},
+      columnStyles:{2:{halign:'right'},3:{halign:'right'},4:{halign:'right'}},
+      didParseCell:(d)=>{ if(d.row.index === 0 || d.row.index === corpo.length-1) d.cell.styles.fontStyle = 'bold'; } });
+    const ySig = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 15, 9, titulo);
+    desenharAssinaturas(pdf, ySig);
+    pdf.save(nomeArquivoPdf(`extrato_${nomeArquivoSeguro(conta.nome)}_${MESES[mes-1]}_${ano}`));
+    toast('PDF gerado!');
+  } catch(e){ console.error('Erro ao gerar extrato:', e); toast('Erro ao gerar o PDF: '+e.message, true); }
+  finally { btn.disabled = false; }
+}
+
+// ----- Conciliação -----
+let finConcLista = [], finConcSaldos = null;
+async function renderConciliacao(){
+  const conta = contaPorId($('finConcConta').value);
+  const editavel = podeEditarAba('financeiro');
+  $('btnConcMarcarTodos').style.display = $('btnConcDesmarcarTodos').style.display = editavel ? 'inline-flex' : 'none';
+  if(!conta){ $('finConcResumo').innerHTML = ''; $('finConcTbody').innerHTML = `<tr><td colspan="5" class="empty">Cadastre uma conta para conciliar.</td></tr>`; finConcLista = []; return; }
+  const mes = parseInt($('finConcMes').value), ano = parseInt($('finConcAno').value);
+  $('finConcTbody').innerHTML = `<tr><td colspan="5" class="empty">Carregando...</td></tr>`;
+  const ini = iniMesISO(ano, mes), fim = iniProxMesISO(ano, mes);
+  finConcLista = fim <= conta.dataSaldo ? [] : await movimentosDaConta(conta, maiorData(ini, conta.dataSaldo), fim);
+  // Saldo do sistema x saldo só dos conciliados, ambos ao fim do mês.
+  const [sistema, conciliado] = await Promise.all([saldoDaContaAntesDe(conta, fim, false), saldoDaContaAntesDe(conta, fim, true)]);
+  finConcSaldos = { sistema, conciliado };
+  desenharConciliacao();
+}
+function desenharConciliacao(){
+  const editavel = podeEditarAba('financeiro');
+  const filtro = $('finConcFiltro').value;
+  const visiveis = finConcLista.filter(l => filtro === 'pendentes' ? !l.conciliado : filtro === 'conciliados' ? !!l.conciliado : true);
+  const pend = finConcLista.filter(l => !l.conciliado);
+  const liq = (l) => (l.contaEntrada||0) - (l.contaSaida||0);
+  $('finConcResumo').innerHTML = `
+    <div><div class="stat-label">Saldo no sistema (fim do mês)</div><div class="num">${fmtBRL(finConcSaldos.sistema)}</div></div>
+    <div><div class="stat-label">Saldo conciliado</div><div class="num"><b>${fmtBRL(finConcSaldos.conciliado)}</b></div></div>
+    <div><div class="stat-label">Pendentes no mês</div><div class="num">${pend.length}</div></div>
+    <div><div class="stat-label">Valor líquido pendente (todo o histórico)</div><div class="num">${fmtBRL(finConcSaldos.sistema - finConcSaldos.conciliado)}</div></div>`;
+  $('finConcTbody').innerHTML = visiveis.length ? visiveis.map(l => `<tr>
+      <td><input type="checkbox" data-conc="${l.id}" ${l.conciliado ? 'checked' : ''} ${editavel ? '' : 'disabled'}></td>
+      <td>${formatarDataBR(l.dataStr)}</td><td>${historicoDoMov(l)}</td>
+      <td class="num green" style="text-align:right;">${l.contaEntrada ? fmtBRL(l.contaEntrada) : ''}</td>
+      <td class="num red" style="text-align:right;">${l.contaSaida ? fmtBRL(l.contaSaida) : ''}</td></tr>`).join('')
+    : `<tr><td colspan="5" class="empty">Nenhum lançamento para mostrar.</td></tr>`;
+  $('finConcTbody').querySelectorAll('[data-conc]').forEach(chk => chk.addEventListener('change', async ()=>{
+    chk.disabled = true;
+    await aplicarConciliacao([finConcLista.find(l=>l.id===chk.dataset.conc)], chk.checked);
+  }));
+  atualizarVereditoConciliacao();
+}
+function atualizarVereditoConciliacao(){
+  const v = $('finConcSaldoBanco').value;
+  if(v === '' || !finConcSaldos){ $('finConcVeredito').innerHTML = ''; return; }
+  const dif = Math.round((parseFloat(v) - finConcSaldos.conciliado) * 100) / 100;
+  $('finConcVeredito').innerHTML = dif === 0
+    ? `<span class="fin-ok">✓ Bateu! O extrato confere com o saldo conciliado.</span>`
+    : `<span class="fin-erro">Diferença de ${fmtBRL(dif)} (extrato − conciliado). Confira os lançamentos ainda não marcados.</span>`;
+}
+async function aplicarConciliacao(lancs, marcar){
+  const alvo = lancs.filter(l => l && !!l.conciliado !== marcar);
+  if(!alvo.length) return;
+  try{
+    for(let i = 0; i < alvo.length; i += 400){
+      const batch = writeBatch(db);
+      alvo.slice(i, i+400).forEach(l => batch.update(doc(db,'igrejas',state.igrejaAtualId,'lancamentos',l.id), {
+        conciliado: marcar, contaDataConc: marcar ? l.contaData : null,
+        conciliadoEm: marcar ? serverTimestamp() : null, conciliadoPor: marcar ? state.user.uid : null,
+      }));
+      await batch.commit();
+    }
+    toast(marcar ? 'Conciliado!' : 'Conciliação desfeita.');
+  } catch(e){ toast('Erro ao conciliar: '+e.message, true); }
+  await renderConciliacao();
+}
+async function marcarVisiveis(marcar){
+  const filtro = $('finConcFiltro').value;
+  const visiveis = finConcLista.filter(l => filtro === 'pendentes' ? !l.conciliado : filtro === 'conciliados' ? !!l.conciliado : true);
+  if(!visiveis.length) return;
+  if(marcar && !confirm(`Marcar ${visiveis.length} lançamento(s) como conciliado(s)?`)) return;
+  if(!marcar && !confirm(`Desfazer a conciliação de ${visiveis.length} lançamento(s)?`)) return;
+  await aplicarConciliacao(visiveis, marcar);
+}
+
+// Atribui conta aos lançamentos antigos (só os que ainda não têm conta e cuja
+// competência não está bloqueada — o servidor recusaria a edição).
+async function atribuirContaEmLote(){
+  const conta = contaPorId($('finAtribConta').value);
+  const de = $('finAtribDe').value, ate = $('finAtribAte').value;
+  if(!conta){ toast('Escolha a conta.', true); return; }
+  if(!de || !ate || de > ate){ toast('Informe o intervalo de competências (de/até).', true); return; }
+  const btn = $('btnAtribuirConta'); btn.disabled = true; toast('Processando...');
+  try{
+    const snaps = await getDocs(query(collection(db,'igrejas',state.igrejaAtualId,'lancamentos'),
+      where('competenciaKey','>=',de), where('competenciaKey','<=',ate)));
+    const todos = snaps.docs.filter(d => !d.data().contaId && d.data().dataStr);
+    const alvo = todos.filter(d => !state.competenciasBloqueadas.has(d.data().competenciaKey));
+    const bloqueados = todos.length - alvo.length;
+    if(!alvo.length){ $('finAtribAviso').textContent = `Nenhum lançamento sem conta para atribuir${bloqueados ? ` (${bloqueados} em competência bloqueada)` : ''}.`; return; }
+    if(!confirm(`Atribuir "${conta.nome}" a ${alvo.length} lançamento(s) sem conta?`)) return;
+    for(let i = 0; i < alvo.length; i += 400){
+      const batch = writeBatch(db);
+      alvo.slice(i, i+400).forEach(d => { const v = d.data(); batch.update(d.ref, camposConta(conta.id, v.dataStr, v.tipo, v.valor)); });
+      await batch.commit();
+    }
+    $('finAtribAviso').textContent = `${alvo.length} lançamento(s) atribuídos.${bloqueados ? ` ${bloqueados} ficaram de fora por estarem em competência bloqueada.` : ''}`;
+    toast('Conta atribuída!');
+  } catch(e){ console.error(e); toast('Erro: '+e.message, true); }
+  finally { btn.disabled = false; }
+}
+
 // ---------- CAEB ----------
 // Calcula o que a CAEB cobre em uma competência. Regra: só entram as despesas
 // dos tipos marcados manualmente (papel coberta/contribuição/ajuda), e as
@@ -1236,6 +1565,7 @@ $('btnGerarCaeb').addEventListener('click', async ()=>{
         tipo:'despesa', dataStr, mes, ano, competenciaKey:key, categoriaId:it.cat.id, categoriaNome:it.cat.nome,
         descricao: it.desc, valor: it.valor, membroId:null, membroNome:'', bloqueado:false,
         origem: it.origem, caebPercentual: it.pct ?? null, caebBase: it.base ?? null,
+        ...camposConta(state.contas.find(c=>c.principal)?.id || null, dataStr, 'despesa', it.valor),
         criadoPor: state.user.uid, criadoPorNome: state.perfil.nome, atualizadoEm: serverTimestamp()
       };
       if(!existente.exists()) payload.criadoEm = serverTimestamp();

@@ -557,3 +557,16 @@ Algumas igrejas não se sustentam sozinhas: o saldo negativo delas é coberto pe
 **Campos novos:** `igrejas`: caebeira, caebDesde, caebPercentual, caebAjudaFixa; `categoriasDespesa`: caebPapel; `categoriasReceita`: caebRepasse; lançamentos gerados: origem, caebPercentual, caebBase. As regras do Firestore não mudaram.
 
 **Atualização:** substitua index.html, app.js, sw.js e README.md no GitHub (app.js agora é `?v=3` e o cache é `softplus-cache-v6`, sempre alterados juntos).
+
+## Módulo Financeiro: contas, extrato e conciliação bancária
+
+Nova aba **Financeiro** (com permissão própria, liberada por usuário em Usuários), separada do relatório mensal — nada aqui aparece nele.
+
+- **Contas e saldos:** cadastre contas bancárias e, se quiser, um "Caixa (dinheiro)". Cada conta tem saldo inicial e a data desse saldo; só lançamentos dessa data em diante entram. Guarde apenas os últimos dígitos da conta, nunca o número completo. A tabela "Saldo mês a mês" mostra saldo inicial, entradas, saídas e saldo final de cada mês.
+- **Lançamentos:** ganham o campo **Conta**, obrigatório apenas nas igrejas que já cadastraram alguma conta (a conta principal vem pré-selecionada). Lançamentos antigos não são alterados; use "Atribuir conta a lançamentos antigos" para vinculá-los em lote por intervalo de competências. Lançamentos de competência bloqueada ficam de fora. Importações de planilha continuam sem conta e podem ser atribuídas por essa mesma ferramenta.
+- **Extrato:** por conta e mês, com saldo anterior, entradas, saídas e saldo corrido, mais PDF. Usa a **data real** do lançamento (como o banco), não a competência.
+- **Conciliação:** marque os lançamentos que já aparecem no extrato do banco. Digite o saldo final do extrato e o app compara com o saldo conciliado ("Bateu!" quando a diferença é zero). Lançamento conciliado não pode ser editado nem excluído até ser desconciliado (regra também no servidor).
+
+**Decisões técnicas (por quê):** o Firestore só indexa sozinho filtros em um campo; por isso cada lançamento com conta guarda `contaData` = "contaId|AAAA-MM-DD" (um único filtro de intervalo, soma no servidor por agregação, com fallback manual), `contaEntrada`/`contaSaida` e, quando conciliado, `contaDataConc` (permite somar só os conciliados). O extrato e a conciliação carregam um mês de uma conta por vez (limitado pelo próprio filtro); a soma de saldos nunca baixa documentos. **Regras do Firestore mudaram** (coleção `contas`, campos de conciliação, bloqueio de edição de conciliados): publique o novo `firestore.rules`. Usuários já cadastrados não têm a aba Financeiro até o administrador liberá-la em Usuários → Editar.
+
+**Atualização:** substitua index.html, app.js, sw.js, firestore.rules e README.md (versão 4, cache `softplus-cache-v7`).
