@@ -1487,7 +1487,7 @@ function atualizarVereditoConciliacao(){
   const dif = Math.round((parseFloat(v) - finConcSaldos.conciliado) * 100) / 100;
   $('finConcVeredito').innerHTML = dif === 0
     ? `<span class="fin-ok">✓ Bateu! O extrato confere com o saldo conciliado.</span>`
-    : `<span class="fin-erro">Diferença de ${fmtBRL(dif)} (extrato − conciliado). Confira os lançamentos ainda não marcados.</span>`;
+    : `<span class="fin-erro">Diferença de ${fmtBRL(dif)} (extrato - conciliado). Confira os lançamentos ainda não marcados.</span>`;
 }
 async function aplicarConciliacao(lancs, marcar){
   const alvo = lancs.filter(l => l && !!l.conciliado !== marcar);
@@ -1556,9 +1556,15 @@ function calcularCaeb(lancs){
     .sort((a,b)=>(a.dataStr||'').localeCompare(b.dataStr||''));
   const soma = (l) => l.reduce((s,x)=> s + (x.valor||0), 0);
   const totalReceitas = soma(receitasBase), totalDespesas = soma(despCaeb), totalRepasse = soma(repasses);
+  const totalContribuicao = soma(despCaeb.filter(l => papelDe[l.categoriaId] === 'contribuicao'));
   const resultado = totalReceitas - totalDespesas;
-  return { receitasBase, repasses, despCaeb, totalReceitas, totalDespesas, totalRepasse,
-    resultado, aCobrir: resultado < 0 ? -resultado : 0, excedente: resultado > 0 ? resultado : 0 };
+  const aCobrir = resultado < 0 ? -resultado : 0;
+  // Repasse "líquido": a CAEB cobre o déficit bruto (que já inclui a contribuição
+  // da igreja como despesa), mas a igreja devolve essa contribuição à CAEB —
+  // então o dinheiro que de fato precisa sair da CAEB é o bruto menos a contribuição.
+  // Negativo = é a igreja que fica devendo à CAEB.
+  return { receitasBase, repasses, despCaeb, totalReceitas, totalDespesas, totalRepasse, totalContribuicao,
+    resultado, aCobrir, excedente: resultado > 0 ? resultado : 0, liquido: aCobrir - totalContribuicao };
 }
 function renderCaebCard(lancs, mes, ano){
   const card = $('cardCaeb');
@@ -1570,7 +1576,9 @@ function renderCaebCard(lancs, mes, ano){
   $('relCaebResumo').innerHTML =
     linha('Receitas computáveis (sem repasse da CAEB)', c.totalReceitas, 'green') +
     linha('Despesas dentro do cálculo CAEB', c.totalDespesas, 'red') +
-    linha(c.resultado < 0 ? '<b>Valor a ser coberto pela CAEB</b>' : '<b>Resultado (sem necessidade de cobertura)</b>', c.resultado < 0 ? c.aCobrir : c.excedente) +
+    linha(c.resultado < 0 ? '<b>Valor a ser coberto pela CAEB (bruto)</b>' : '<b>Resultado (sem necessidade de cobertura)</b>', c.resultado < 0 ? c.aCobrir : c.excedente) +
+    linha('(-) Contribuição à CAEB já incluída nas despesas', c.totalContribuicao) +
+    linha(c.liquido >= 0 ? '<b>Valor líquido que a CAEB precisa repassar</b>' : '<b>Valor líquido que a igreja deve à CAEB</b>', Math.abs(c.liquido)) +
     linha('Repasse da CAEB já lançado como receita no mês', c.totalRepasse);
 }
 // Gera (ou atualiza) os lançamentos reais da contribuição percentual e da
@@ -3054,6 +3062,71 @@ function nomeArquivoPdf(prefixo){
   return `${prefixo}_${nomeArquivoSeguro(igrejaAtual()?.nome)}_${Date.now()}.pdf`;
 }
 
+// Página de receitas nominais (dizimistas + ofertas), igual à do relatório
+// mensal. Reaproveitada pelo relatório CAEB, que só muda o conjunto de
+// receitas recebido (sem o repasse da CAEB) e o rótulo do total.
+function ordenarPorFielNome(lista){
+  return [...lista].sort((a,b) => {
+    const na = (a.membroNome||'').trim(), nb = (b.membroNome||'').trim();
+    if(!na && !nb) return 0;
+    if(!na) return 1;
+    if(!nb) return -1;
+    return na.localeCompare(nb, 'pt-BR');
+  });
+}
+function desenharPaginaReceitas(pdf, tituloPeriodo, receitas, rotuloEntradas = 'TOTAL DE ENTRADAS DO MÊS (R$)'){
+  const dizimos = receitas.filter(l => ehDizimo(l.categoriaNome));
+  const ofertas = receitas.filter(l => !ehDizimo(l.categoriaNome));
+  const totalDizimos = dizimos.reduce((s,l)=>s+l.valor,0);
+  const totalOfertas = ofertas.reduce((s,l)=>s+l.valor,0);
+  const totalEntradasPg = totalDizimos + totalOfertas;
+  let y = cabecalhoRelatorioPdf(pdf, tituloPeriodo);
+  y = faixaTitulo(pdf, y, 'RELAÇÃO DE DIZIMISTAS E SEUS VALORES');
+
+  const linhasDizimos = dizimos.map((l,i) => [i+1, l.membroNome||'—', formatarDataBR(l.dataStr), fmtBRL(l.valor)]);
+  if(linhasDizimos.length){
+    const metade = Math.ceil(linhasDizimos.length/2);
+    const colEsq = linhasDizimos.slice(0, metade), colDir = linhasDizimos.slice(metade);
+    const opcoes = { head:[['N°','Nome','Data','Valor']], theme:'grid', styles:{fontSize:6.5, cellPadding:1}, headStyles:{fillColor:[13,79,196], fontSize:6.5}, columnStyles:{3:{halign:'right'}}, margin:{bottom:12} };
+    pdf.autoTable({ ...opcoes, startY:y, body:colEsq, margin:{...opcoes.margin, left:14, right:106} });
+    let y1 = pdf.lastAutoTable.finalY;
+    let y2 = y1;
+    if(colDir.length){
+      pdf.autoTable({ ...opcoes, startY:y, body:colDir, margin:{...opcoes.margin, left:106, right:14} });
+      y2 = pdf.lastAutoTable.finalY;
+    }
+    y = Math.max(y1,y2) + 2;
+  } else {
+    pdf.setFontSize(8); pdf.text('Nenhum dízimo registrado neste mês.', 14, y+5); y += 9;
+  }
+  y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
+  y = faixaTotal(pdf, y, 'TOTAL DE DÍZIMOS (R$)', totalDizimos);
+
+  y = garantirEspaco(pdf, y, 25, tituloPeriodo);
+  y = faixaTitulo(pdf, y, 'RELAÇÃO DE OFERTAS');
+  const linhasOfertas = ofertas.map((l,i) => [
+    i+1, l.membroNome||'', [l.categoriaNome, l.descricao].filter(Boolean).join(' - '), formatarDataBR(l.dataStr), fmtBRL(l.valor)
+  ]);
+  pdf.autoTable({
+    startY:y, head:[['N°','Nome do ofertante','Tipo de oferta','Data','Valor']],
+    body: linhasOfertas.length ? linhasOfertas : [['—','Nenhuma oferta registrada neste mês.','','','']],
+    theme:'grid', styles:{fontSize:6.5, cellPadding:1.2}, headStyles:{fillColor:[13,79,196], fontSize:6.5},
+    columnStyles:{4:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
+  });
+  y = pdf.lastAutoTable.finalY + 2;
+  y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
+  y = faixaTotal(pdf, y, 'TOTAL DE OFERTAS (R$)', totalOfertas);
+  y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
+  y = faixaTotal(pdf, y, rotuloEntradas, totalEntradasPg, [200,230,210]);
+
+  // Só abre página nova pra assinatura se realmente não couber (raro,
+  // meses com volume bem fora do comum) — refaz o cabeçalho pra não
+  // deixar uma página "solta" sem contexto.
+  y = garantirEspaco(pdf, y, 19, tituloPeriodo);
+  y = desenharAssinaturas(pdf, y + 10);
+  return y;
+}
+
 $('btnPdfMensal').addEventListener('click', async ()=>{
   const btn = $('btnPdfMensal');
   btn.disabled = true; toast('Gerando PDF...');
@@ -3083,50 +3156,8 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
     const tituloPeriodo = `RELATÓRIO DO MÊS DE ${MESES[mes-1].toUpperCase()} DE ${ano}`;
 
     // ---- PÁGINA 1: dizimistas + ofertas (por ordem alfabética do fiel) ----
-    let y = cabecalhoRelatorioPdf(pdf, tituloPeriodo);
-    y = faixaTitulo(pdf, y, 'RELAÇÃO DE DIZIMISTAS E SEUS VALORES');
-
-    const linhasDizimos = dizimos.map((l,i) => [i+1, l.membroNome||'—', formatarDataBR(l.dataStr), fmtBRL(l.valor)]);
-    if(linhasDizimos.length){
-      const metade = Math.ceil(linhasDizimos.length/2);
-      const colEsq = linhasDizimos.slice(0, metade), colDir = linhasDizimos.slice(metade);
-      const opcoes = { head:[['N°','Nome','Data','Valor']], theme:'grid', styles:{fontSize:6.5, cellPadding:1}, headStyles:{fillColor:[13,79,196], fontSize:6.5}, columnStyles:{3:{halign:'right'}}, margin:{bottom:12} };
-      pdf.autoTable({ ...opcoes, startY:y, body:colEsq, margin:{...opcoes.margin, left:14, right:106} });
-      let y1 = pdf.lastAutoTable.finalY;
-      let y2 = y1;
-      if(colDir.length){
-        pdf.autoTable({ ...opcoes, startY:y, body:colDir, margin:{...opcoes.margin, left:106, right:14} });
-        y2 = pdf.lastAutoTable.finalY;
-      }
-      y = Math.max(y1,y2) + 2;
-    } else {
-      pdf.setFontSize(8); pdf.text('Nenhum dízimo registrado neste mês.', 14, y+5); y += 9;
-    }
-    y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
-    y = faixaTotal(pdf, y, 'TOTAL DE DÍZIMOS (R$)', totalDizimos);
-
-    y = garantirEspaco(pdf, y, 25, tituloPeriodo);
-    y = faixaTitulo(pdf, y, 'RELAÇÃO DE OFERTAS');
-    const linhasOfertas = ofertas.map((l,i) => [
-      i+1, l.membroNome||'', [l.categoriaNome, l.descricao].filter(Boolean).join(' - '), formatarDataBR(l.dataStr), fmtBRL(l.valor)
-    ]);
-    pdf.autoTable({
-      startY:y, head:[['N°','Nome do ofertante','Tipo de oferta','Data','Valor']],
-      body: linhasOfertas.length ? linhasOfertas : [['—','Nenhuma oferta registrada neste mês.','','','']],
-      theme:'grid', styles:{fontSize:6.5, cellPadding:1.2}, headStyles:{fillColor:[13,79,196], fontSize:6.5},
-      columnStyles:{4:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
-    });
-    y = pdf.lastAutoTable.finalY + 2;
-    y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
-    y = faixaTotal(pdf, y, 'TOTAL DE OFERTAS (R$)', totalOfertas);
-    y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
-    y = faixaTotal(pdf, y, 'TOTAL DE ENTRADAS DO MÊS (R$)', totalEntradas, [200,230,210]);
-
-    // Só abre página nova pra assinatura se realmente não couber (raro,
-    // meses com volume bem fora do comum) — refaz o cabeçalho pra não
-    // deixar uma página "solta" sem contexto.
-    y = garantirEspaco(pdf, y, 19, tituloPeriodo);
-    y = desenharAssinaturas(pdf, y + 10);
+    desenharPaginaReceitas(pdf, tituloPeriodo, receitas);
+    let y;
 
     // ---- PÁGINA(S) SEGUINTE(S): despesas (por data) + balanço final ----
     // Sempre em página própria, para manter a separação clara do modelo —
@@ -3186,39 +3217,36 @@ $('btnPdfCaeb').addEventListener('click', async ()=>{
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF();
     const titulo = `RELATÓRIO CAEB — ${MESES[mes-1].toUpperCase()} DE ${ano}`;
+    // PÁGINA 1: mesma relação nominal do relatório mensal, mas só com as
+    // receitas computáveis (repasse da CAEB fora).
+    desenharPaginaReceitas(pdf, titulo, ordenarPorFielNome(c.receitasBase), 'TOTAL DE RECEITAS COMPUTÁVEIS (R$)');
+
+    // PÁGINA 2: despesas dentro do cálculo + apuração
+    pdf.addPage();
     let y = cabecalhoRelatorioPdf(pdf, titulo);
-
-    // Receitas por tipo (agrupadas: o relatório CAEB é um demonstrativo, não a relação nominal)
-    y = faixaTitulo(pdf, y, 'RECEITAS COMPUTÁVEIS (EXCETO REPASSE DA CAEB)');
-    const porTipo = {};
-    c.receitasBase.forEach(l => { porTipo[l.categoriaNome||'—'] = (porTipo[l.categoriaNome||'—']||0) + l.valor; });
-    const linhasR = Object.entries(porTipo).sort((a,b)=>a[0].localeCompare(b[0],'pt-BR')).map(([n,v])=>[n, fmtBRL(v)]);
-    pdf.autoTable({ startY:y, head:[['Tipo de receita','Valor']], body: linhasR.length ? linhasR : [['Nenhuma receita no mês','']],
-      theme:'grid', styles:{fontSize:7.5, cellPadding:1.4}, headStyles:{fillColor:[13,79,196]}, columnStyles:{1:{halign:'right'}}, margin:{left:14,right:14,bottom:12} });
-    y = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 2, 8.5, titulo);
-    y = faixaTotal(pdf, y, 'TOTAL DE RECEITAS COMPUTÁVEIS (R$)', c.totalReceitas, [200,230,210]);
-
-    y = garantirEspaco(pdf, y, 25, titulo);
     y = faixaTitulo(pdf, y, 'DESPESAS DENTRO DO CÁLCULO DA CAEB');
     const linhasD = c.despCaeb.map((l,i)=>[i+1, [l.categoriaNome, l.descricao].filter(Boolean).join(' - '), formatarDataBR(l.dataStr), fmtBRL(l.valor)]);
     pdf.autoTable({ startY:y, head:[['N°','Descrição da despesa','Data','Valor (R$)']],
       body: linhasD.length ? linhasD : [['—','Nenhuma despesa CAEB neste mês.','','']],
-      theme:'grid', styles:{fontSize:7.5, cellPadding:1.4}, headStyles:{fillColor:[199,63,63]}, columnStyles:{3:{halign:'right'}}, margin:{left:14,right:14,bottom:12} });
+      theme:'grid', styles:{fontSize:6.5, cellPadding:1.2}, headStyles:{fillColor:[199,63,63], fontSize:6.5}, columnStyles:{3:{halign:'right'}}, margin:{left:14,right:14,bottom:12} });
     y = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 2, 8.5, titulo);
     y = faixaTotal(pdf, y, 'TOTAL DE DESPESAS CAEB (R$)', c.totalDespesas, [248,215,215]);
 
-    y = garantirEspaco(pdf, y, 50, titulo);
+    y = garantirEspaco(pdf, y, 75, titulo);
     y = faixaTitulo(pdf, y, 'APURAÇÃO DA CAEB');
+    // Só caracteres ASCII/latinos nos rótulos: o símbolo "-" não existe na fonte do PDF.
     const linhasB = [
-      ['Receitas computáveis', fmtBRL(c.totalReceitas)],
+      ['Receitas computáveis (sem repasse da CAEB)', fmtBRL(c.totalReceitas)],
       ['Despesas dentro do cálculo CAEB', fmtBRL(c.totalDespesas)],
-      ['Resultado (receitas − despesas)', fmtBRL(c.resultado)],
-      [c.resultado < 0 ? 'VALOR A SER COBERTO PELA CAEB' : 'Valor a ser coberto pela CAEB', fmtBRL(c.aCobrir)],
-      ['Repasse da CAEB lançado no mês (informativo)', fmtBRL(c.totalRepasse)],
+      ['Resultado (receitas - despesas)', fmtBRL(c.resultado)],
+      ['Valor a ser coberto pela CAEB (bruto)', fmtBRL(c.aCobrir)],
+      ['(-) Contribuição à CAEB, já incluída nas despesas', fmtBRL(c.totalContribuicao)],
+      [c.liquido >= 0 ? 'VALOR LÍQUIDO A SER REPASSADO PELA CAEB' : 'VALOR LÍQUIDO A SER REPASSADO À CAEB', fmtBRL(Math.abs(c.liquido))],
+      ['Repasse da CAEB já lançado no mês (informativo)', fmtBRL(c.totalRepasse)],
     ];
     pdf.autoTable({ startY:y, body: linhasB, theme:'grid', styles:{fontSize:8.5, cellPadding:2}, margin:{bottom:12},
       columnStyles:{0:{fontStyle:'bold'}, 1:{halign:'right'}},
-      didParseCell:(data)=>{ if(data.row.index === 3) data.row.cells[0].styles.fillColor = data.row.cells[1].styles.fillColor = [210,235,215]; } });
+      didParseCell:(data)=>{ if(data.row.index === 5) data.row.cells[0].styles.fillColor = data.row.cells[1].styles.fillColor = [210,235,215]; } });
     y = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 10, 20, titulo);
     desenharAssinaturas(pdf, y);
     pdf.save(nomeArquivoPdf(`relatorio_caeb_${MESES[mes-1]}_${ano}`));
