@@ -542,3 +542,18 @@ Se isso já aconteceu com você antes dessa correção, conserte manualmente:
   igreja de **outros** usuários só atualiza da próxima vez que eles renovarem
   o próprio vínculo (o dono da alteração já vê atualizado na hora). É um
   detalhe cosmético, não afeta os dados financeiros.
+
+## Módulo CAEB (igrejas Caebeiras)
+
+Algumas igrejas não se sustentam sozinhas: o saldo negativo delas é coberto pelo caixa regional CAEB, mas só considerando um conjunto específico de despesas. Tudo é **opcional e controlado manualmente** — igrejas que não forem marcadas como Caebeira continuam exatamente como antes, e nenhum lançamento existente é alterado (só ganhamos campos novos, que lançamentos antigos simplesmente não têm).
+
+**Como configurar (nada é criado automaticamente):**
+1. *Dados da Igreja*: marque "Igreja Caebeira" e informe "Caebeira desde", o percentual de contribuição e a ajuda fixa mensal (o R$ 50,00 — fica editável aqui, não está fixo no código).
+2. *Categorias e Grupos → Tipos de Despesa*: você cria os tipos (ex.: "Prebenda pastoral", "Água - Templo", "Luz - Casa Pastoral"...) e, em cada um, escolhe o papel: *Fora do cálculo CAEB*, *Despesa coberta pela CAEB*, *Contribuição à CAEB (%)* ou *Ajuda fixa*. Só pode haver um tipo "Contribuição" e um "Ajuda fixa".
+3. *Tipos de Receita*: marque "Repasse da CAEB" no tipo usado para registrar o repasse. Ele fica fora da base de cálculo (senão o próprio repasse reduziria o valor a cobrir).
+
+**Em Relatórios** (só aparece para Caebeiras): o card CAEB mostra receitas computáveis − despesas CAEB = valor a ser coberto. O botão "Gerar contribuição e ajuda do mês" cria um lançamento real de contribuição (percentual × receitas computáveis da competência) e outro da ajuda fixa, com ID fixo por competência (apertar de novo apenas recalcula, pedindo confirmação). Respeita competência bloqueada. O "PDF CAEB do mês" é o relatório só para fins de CAEB; o "PDF do mês" de sempre segue sendo o completo.
+
+**Campos novos:** `igrejas`: caebeira, caebDesde, caebPercentual, caebAjudaFixa; `categoriasDespesa`: caebPapel; `categoriasReceita`: caebRepasse; lançamentos gerados: origem, caebPercentual, caebBase. As regras do Firestore não mudaram.
+
+**Atualização:** substitua index.html, app.js, sw.js e README.md no GitHub (app.js agora é `?v=3` e o cache é `softplus-cache-v6`, sempre alterados juntos).

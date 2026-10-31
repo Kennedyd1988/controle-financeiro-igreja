@@ -1091,11 +1091,53 @@ function renderCadastros(){
   const editavel = podeEditarAba('cadastros');
   const lista = ordenarPorNome(state[state.cadTab]);
   $('cadNovoNome').parentElement.style.display = editavel ? 'flex' : 'none';
+  const caebeira = !!state.igrejaDados?.caebeira;
+  // Controles CAEB só aparecem em igreja Caebeira; nas demais a tela é idêntica à de antes.
+  const controleCaeb = (item) => {
+    if(!caebeira || !editavel) return '';
+    if(state.cadTab === 'categoriasDespesa'){
+      const p = item.caebPapel || '';
+      return `<select class="caeb-sel" data-caeb-papel="${item.id}">
+        <option value="" ${p===''?'selected':''}>Fora do cálculo CAEB</option>
+        <option value="coberta" ${p==='coberta'?'selected':''}>Despesa coberta pela CAEB</option>
+        <option value="contribuicao" ${p==='contribuicao'?'selected':''}>Contribuição à CAEB (%)</option>
+        <option value="ajuda" ${p==='ajuda'?'selected':''}>Ajuda fixa (limpeza/ceia)</option>
+      </select>`;
+    }
+    if(state.cadTab === 'categoriasReceita'){
+      return `<label class="caeb-check" style="font-size:12px;"><input type="checkbox" data-caeb-repasse="${item.id}" ${item.caebRepasse?'checked':''}> Repasse da CAEB</label>`;
+    }
+    return '';
+  };
   $('cadLista').innerHTML = lista.length ? lista.map(item => `
-    <div class="list-row">
-      <span>${item.nome}</span>
+    <div class="list-row" style="gap:10px; flex-wrap:wrap;">
+      <span style="flex:1; min-width:140px;">${item.nome}</span>
+      ${controleCaeb(item)}
       ${editavel ? `<button class="btn btn-sm btn-danger" data-del="${item.id}">Excluir</button>` : ''}
     </div>`).join('') : `<div class="empty">Nenhum item cadastrado.</div>`;
+  $('cadLista').querySelectorAll('[data-caeb-papel]').forEach(sel=>{
+    sel.addEventListener('change', async ()=>{
+      const valor = sel.value;
+      // Só pode haver um tipo "contribuição" e um "ajuda": o botão de gerar precisa saber
+      // exatamente em qual tipo lançar, sem adivinhar.
+      if(valor === 'contribuicao' || valor === 'ajuda'){
+        const outro = state.categoriasDespesa.find(c => c.id !== sel.dataset.caebPapel && c.caebPapel === valor);
+        if(outro){ toast(`Já existe um tipo com esse papel: "${outro.nome}". Mude o outro para "Fora do cálculo" antes.`, true); renderCadastros(); return; }
+      }
+      try{
+        await updateDoc(doc(db,'igrejas',state.igrejaAtualId,'categoriasDespesa',sel.dataset.caebPapel), { caebPapel: valor });
+        await carregarDadosDaIgreja(); toast('Tipo atualizado.'); renderCadastros();
+      } catch(e){ toast('Erro ao salvar: '+e.message, true); }
+    });
+  });
+  $('cadLista').querySelectorAll('[data-caeb-repasse]').forEach(chk=>{
+    chk.addEventListener('change', async ()=>{
+      try{
+        await updateDoc(doc(db,'igrejas',state.igrejaAtualId,'categoriasReceita',chk.dataset.caebRepasse), { caebRepasse: chk.checked });
+        await carregarDadosDaIgreja(); toast('Tipo atualizado.'); renderCadastros();
+      } catch(e){ toast('Erro ao salvar: '+e.message, true); }
+    });
+  });
   $('cadLista').querySelectorAll('[data-del]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       const checagens = {
@@ -1124,6 +1166,90 @@ $('btnCadAdd').addEventListener('click', async ()=>{
   toast('Item adicionado!'); renderCadastros();
 });
 
+
+// ---------- CAEB ----------
+// Calcula o que a CAEB cobre em uma competência. Regra: só entram as despesas
+// dos tipos marcados manualmente (papel coberta/contribuição/ajuda), e as
+// receitas dos tipos marcados como "Repasse da CAEB" ficam FORA da base —
+// senão o próprio repasse reduziria o valor que a CAEB precisa cobrir.
+function calcularCaeb(lancs){
+  const papelDe = {}; state.categoriasDespesa.forEach(c => { if(c.caebPapel) papelDe[c.id] = c.caebPapel; });
+  const repasseIds = new Set(state.categoriasReceita.filter(c => c.caebRepasse).map(c => c.id));
+  const receitas = lancs.filter(l => l.tipo === 'receita');
+  const receitasBase = receitas.filter(l => !repasseIds.has(l.categoriaId));
+  const repasses = receitas.filter(l => repasseIds.has(l.categoriaId));
+  const despCaeb = lancs.filter(l => l.tipo === 'despesa' && papelDe[l.categoriaId])
+    .sort((a,b)=>(a.dataStr||'').localeCompare(b.dataStr||''));
+  const soma = (l) => l.reduce((s,x)=> s + (x.valor||0), 0);
+  const totalReceitas = soma(receitasBase), totalDespesas = soma(despCaeb), totalRepasse = soma(repasses);
+  const resultado = totalReceitas - totalDespesas;
+  return { receitasBase, repasses, despCaeb, totalReceitas, totalDespesas, totalRepasse,
+    resultado, aCobrir: resultado < 0 ? -resultado : 0, excedente: resultado > 0 ? resultado : 0 };
+}
+function renderCaebCard(lancs, mes, ano){
+  const card = $('cardCaeb');
+  const ativo = !!state.igrejaDados?.caebeira;
+  card.style.display = ativo ? 'block' : 'none';
+  if(!ativo) return;
+  const c = calcularCaeb(lancs);
+  const linha = (rotulo, valor, cor) => `<div class="list-row"><span>${rotulo}</span><span class="num ${cor||''}">${fmtBRL(valor)}</span></div>`;
+  $('relCaebResumo').innerHTML =
+    linha('Receitas computáveis (sem repasse da CAEB)', c.totalReceitas, 'green') +
+    linha('Despesas dentro do cálculo CAEB', c.totalDespesas, 'red') +
+    linha(c.resultado < 0 ? '<b>Valor a ser coberto pela CAEB</b>' : '<b>Resultado (sem necessidade de cobertura)</b>', c.resultado < 0 ? c.aCobrir : c.excedente) +
+    linha('Repasse da CAEB já lançado como receita no mês', c.totalRepasse);
+}
+// Gera (ou atualiza) os lançamentos reais da contribuição percentual e da
+// ajuda fixa. Usa ID fixo por competência para nunca duplicar: apertar o botão
+// de novo apenas recalcula (útil se entrou receita nova depois).
+$('btnGerarCaeb').addEventListener('click', async ()=>{
+  const btn = $('btnGerarCaeb');
+  if(!podeEditarAba('lancamentos')){ toast('Você não tem permissão para lançar.', true); return; }
+  const mes = parseInt($('relMes').value), ano = parseInt($('relAno').value);
+  const key = competenciaKey(ano, mes);
+  const ig = state.igrejaDados || {};
+  if(ig.caebDesde && key < ig.caebDesde){ toast(`A igreja só é Caebeira a partir de ${ig.caebDesde}.`, true); return; }
+  if(isCompetenciaBloqueada(mes, ano)){ toast('Esta competência está bloqueada.', true); return; }
+  const tipoContrib = state.categoriasDespesa.find(c => c.caebPapel === 'contribuicao');
+  const tipoAjuda = state.categoriasDespesa.find(c => c.caebPapel === 'ajuda');
+  const pct = ig.caebPercentual || 0, ajuda = ig.caebAjudaFixa || 0;
+  if(pct > 0 && !tipoContrib){ toast('Marque um tipo de despesa como "Contribuição à CAEB (%)" em Categorias e Grupos.', true); return; }
+  if(ajuda > 0 && !tipoAjuda){ toast('Marque um tipo de despesa como "Ajuda fixa" em Categorias e Grupos.', true); return; }
+  if(!(pct > 0) && !(ajuda > 0)){ toast('Informe o percentual e/ou a ajuda fixa em Dados da Igreja.', true); return; }
+  btn.disabled = true; toast('Processando...');
+  try{
+    const lancs = await buscarLancamentos(mes, ano);
+    const repasseIds = new Set(state.categoriasReceita.filter(c => c.caebRepasse).map(c => c.id));
+    const base = lancs.filter(l => l.tipo === 'receita' && !repasseIds.has(l.categoriaId)).reduce((s,l)=>s+(l.valor||0),0);
+    const itens = [];
+    if(pct > 0) itens.push({ id:`caeb-contribuicao-${key}`, cat:tipoContrib, origem:'caeb-contribuicao', valor: Math.round(base*pct)/100, desc:`Contribuição CAEB ${pct}% sobre ${fmtBRL(base)}`, pct, base });
+    if(ajuda > 0) itens.push({ id:`caeb-ajuda-${key}`, cat:tipoAjuda, origem:'caeb-ajuda', valor: ajuda, desc:'Ajuda fixa CAEB (limpeza e santa ceia)' });
+    const ultimoDia = new Date(ano, mes, 0).getDate();
+    const dataStr = `${ano}-${String(mes).padStart(2,'0')}-${String(ultimoDia).padStart(2,'0')}`;
+    let gerados = 0;
+    for(const it of itens){
+      if(!(it.valor > 0)) continue;
+      const ref = doc(db,'igrejas',state.igrejaAtualId,'lancamentos',it.id);
+      const existente = await getDoc(ref);
+      if(existente.exists() && !confirm(`Já existe "${it.desc.split(' sobre')[0]}" nesta competência (${fmtBRL(existente.data().valor)}). Atualizar com o valor recalculado (${fmtBRL(it.valor)})?`)) continue;
+      const payload = {
+        tipo:'despesa', dataStr, mes, ano, competenciaKey:key, categoriaId:it.cat.id, categoriaNome:it.cat.nome,
+        descricao: it.desc, valor: it.valor, membroId:null, membroNome:'', bloqueado:false,
+        origem: it.origem, caebPercentual: it.pct ?? null, caebBase: it.base ?? null,
+        criadoPor: state.user.uid, criadoPorNome: state.perfil.nome, atualizadoEm: serverTimestamp()
+      };
+      if(!existente.exists()) payload.criadoEm = serverTimestamp();
+      await setDoc(ref, payload, { merge: true });
+      gerados++;
+    }
+    toast(gerados ? 'Lançamentos da CAEB gerados/atualizados!' : 'Nada foi alterado.');
+    renderRelatorios(); renderPainel();
+  } catch(e){
+    console.error('Erro ao gerar CAEB:', e);
+    toast('Erro ao gerar: '+e.message, true);
+  } finally { btn.disabled = false; }
+});
+
 // ---------- RELATÓRIOS ----------
 let relInit = false;
 async function renderRelatorios(){
@@ -1150,6 +1276,7 @@ async function renderRelatorios(){
   $('relDespesas').innerHTML = agruparPorCategoria(lancs.filter(l=>l.tipo==='despesa'), 'red');
   renderRelatorioFiel();
   renderRelatorioAnual();
+  renderCaebCard(lancs, mes, ano);
 }
 function agruparPorCategoria(lancs, cor){
   const grupos = {};
@@ -1852,6 +1979,11 @@ async function renderIgreja(){
   $('igEmail').value = d.email||''; $('igInstagram').value = d.instagram||'';
   $('igEndereco').value = d.endereco||''; $('igBairro').value = d.bairro||'';
   $('igCidade').value = d.cidade||''; $('igEstado').value = d.estado||''; $('igCep').value = d.cep||'';
+  $('igCaebeira').checked = !!d.caebeira;
+  $('igCaebDesde').value = d.caebDesde || '';
+  $('igCaebPercentual').value = d.caebPercentual ?? '';
+  $('igCaebAjudaFixa').value = d.caebAjudaFixa ?? '';
+  $('igCaebCampos').style.display = d.caebeira ? 'block' : 'none';
   const editavel = isAdmin();
   document.querySelectorAll('#view-igreja input').forEach(i => i.disabled = !editavel);
   $('btnSalvarIgreja').style.display = editavel ? 'inline-flex' : 'none';
@@ -1860,6 +1992,9 @@ async function renderIgreja(){
 // Nome da igreja é sempre buscado "fresco" em igrejas/{id} no login (ver
 // carregarIgrejasDoUsuario) — por isso não precisamos mais propagar essa
 // mudança manualmente pra cada usuário aqui.
+$('igCaebeira').addEventListener('change', ()=>{
+  $('igCaebCampos').style.display = $('igCaebeira').checked ? 'block' : 'none';
+});
 $('btnSalvarIgreja').addEventListener('click', async ()=>{
   if(!validarObrigatorios([{id:'igNome', nome:'Nome da igreja'}])) return;
   const payload = {
@@ -1870,6 +2005,11 @@ $('btnSalvarIgreja').addEventListener('click', async ()=>{
     endereco: $('igEndereco').value.trim(), bairro: $('igBairro').value.trim(),
     cidade: $('igCidade').value.trim(), estado: $('igEstado').value.trim(), cep: $('igCep').value.trim(),
     logo: state.logoPendente || null,
+    // CAEB (campos opcionais — igrejas antigas simplesmente não os têm)
+    caebeira: $('igCaebeira').checked,
+    caebDesde: $('igCaebDesde').value || null,
+    caebPercentual: $('igCaebPercentual').value === '' ? null : parseFloat($('igCaebPercentual').value),
+    caebAjudaFixa: $('igCaebAjudaFixa').value === '' ? null : parseFloat($('igCaebAjudaFixa').value),
   };
   try{
     await updateDoc(doc(db,'igrejas',state.igrejaAtualId), payload);
@@ -2659,6 +2799,59 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
   } finally {
     btn.disabled = false;
   }
+});
+
+$('btnPdfCaeb').addEventListener('click', async ()=>{
+  const btn = $('btnPdfCaeb');
+  btn.disabled = true; toast('Gerando PDF...');
+  try{
+    const mes = parseInt($('relMes').value), ano = parseInt($('relAno').value);
+    const lancs = await buscarLancamentos(mes, ano);
+    const c = calcularCaeb(lancs);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF();
+    const titulo = `RELATÓRIO CAEB — ${MESES[mes-1].toUpperCase()} DE ${ano}`;
+    let y = cabecalhoRelatorioPdf(pdf, titulo);
+
+    // Receitas por tipo (agrupadas: o relatório CAEB é um demonstrativo, não a relação nominal)
+    y = faixaTitulo(pdf, y, 'RECEITAS COMPUTÁVEIS (EXCETO REPASSE DA CAEB)');
+    const porTipo = {};
+    c.receitasBase.forEach(l => { porTipo[l.categoriaNome||'—'] = (porTipo[l.categoriaNome||'—']||0) + l.valor; });
+    const linhasR = Object.entries(porTipo).sort((a,b)=>a[0].localeCompare(b[0],'pt-BR')).map(([n,v])=>[n, fmtBRL(v)]);
+    pdf.autoTable({ startY:y, head:[['Tipo de receita','Valor']], body: linhasR.length ? linhasR : [['Nenhuma receita no mês','']],
+      theme:'grid', styles:{fontSize:7.5, cellPadding:1.4}, headStyles:{fillColor:[13,79,196]}, columnStyles:{1:{halign:'right'}}, margin:{left:14,right:14,bottom:12} });
+    y = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 2, 8.5, titulo);
+    y = faixaTotal(pdf, y, 'TOTAL DE RECEITAS COMPUTÁVEIS (R$)', c.totalReceitas, [200,230,210]);
+
+    y = garantirEspaco(pdf, y, 25, titulo);
+    y = faixaTitulo(pdf, y, 'DESPESAS DENTRO DO CÁLCULO DA CAEB');
+    const linhasD = c.despCaeb.map((l,i)=>[i+1, [l.categoriaNome, l.descricao].filter(Boolean).join(' - '), formatarDataBR(l.dataStr), fmtBRL(l.valor)]);
+    pdf.autoTable({ startY:y, head:[['N°','Descrição da despesa','Data','Valor (R$)']],
+      body: linhasD.length ? linhasD : [['—','Nenhuma despesa CAEB neste mês.','','']],
+      theme:'grid', styles:{fontSize:7.5, cellPadding:1.4}, headStyles:{fillColor:[199,63,63]}, columnStyles:{3:{halign:'right'}}, margin:{left:14,right:14,bottom:12} });
+    y = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 2, 8.5, titulo);
+    y = faixaTotal(pdf, y, 'TOTAL DE DESPESAS CAEB (R$)', c.totalDespesas, [248,215,215]);
+
+    y = garantirEspaco(pdf, y, 50, titulo);
+    y = faixaTitulo(pdf, y, 'APURAÇÃO DA CAEB');
+    const linhasB = [
+      ['Receitas computáveis', fmtBRL(c.totalReceitas)],
+      ['Despesas dentro do cálculo CAEB', fmtBRL(c.totalDespesas)],
+      ['Resultado (receitas − despesas)', fmtBRL(c.resultado)],
+      [c.resultado < 0 ? 'VALOR A SER COBERTO PELA CAEB' : 'Valor a ser coberto pela CAEB', fmtBRL(c.aCobrir)],
+      ['Repasse da CAEB lançado no mês (informativo)', fmtBRL(c.totalRepasse)],
+    ];
+    pdf.autoTable({ startY:y, body: linhasB, theme:'grid', styles:{fontSize:8.5, cellPadding:2}, margin:{bottom:12},
+      columnStyles:{0:{fontStyle:'bold'}, 1:{halign:'right'}},
+      didParseCell:(data)=>{ if(data.row.index === 3) data.row.cells[0].styles.fillColor = data.row.cells[1].styles.fillColor = [210,235,215]; } });
+    y = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 10, 20, titulo);
+    desenharAssinaturas(pdf, y);
+    pdf.save(nomeArquivoPdf(`relatorio_caeb_${MESES[mes-1]}_${ano}`));
+    toast('PDF gerado!');
+  } catch(e){
+    console.error('Erro ao gerar PDF CAEB:', e);
+    toast('Erro ao gerar o PDF: ' + e.message, true);
+  } finally { btn.disabled = false; }
 });
 
 $('btnPdfAnual').addEventListener('click', async ()=>{
