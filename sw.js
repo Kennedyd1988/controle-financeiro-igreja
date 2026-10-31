@@ -4,11 +4,11 @@
 // pro GitHub apareça sozinha na próxima vez que o app abrir com conexão,
 // sem precisar desinstalar nada.
 
-const CACHE_NAME = 'softplus-cache-v9';
+const CACHE_NAME = 'softplus-cache-v12';
 const ARQUIVOS_BASE = [
   './',
   './index.html',
-  './app.js?v=6',
+  './app.js?v=9',
   './firebase-config.js',
   './manifest.json',
   './icon-192.png',

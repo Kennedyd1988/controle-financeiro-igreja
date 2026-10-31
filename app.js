@@ -1633,6 +1633,51 @@ $('btnGerarCaeb').addEventListener('click', async ()=>{
   } finally { btn.disabled = false; }
 });
 
+// Gera o lançamento de receita "Repasse da CAEB" pelo valor BRUTO a cobrir
+// (já com contribuição e ajuda lançadas). É um botão separado, e não parte do
+// anterior, de propósito: o repasse só deve ser registrado quando o dinheiro
+// realmente chegar (e a conciliação bancária confirma isso depois). O tipo de
+// receita marcado como "Repasse da CAEB" fica fora da base, então não há
+// circularidade no cálculo.
+$('btnGerarRepasseCaeb').addEventListener('click', async ()=>{
+  const btn = $('btnGerarRepasseCaeb');
+  if(!podeEditarAba('lancamentos')){ toast('Você não tem permissão para lançar.', true); return; }
+  const mes = parseInt($('relMes').value), ano = parseInt($('relAno').value);
+  const key = competenciaKey(ano, mes);
+  if(isCompetenciaBloqueada(mes, ano)){ toast('Esta competência está bloqueada.', true); return; }
+  const tipos = state.categoriasReceita.filter(c => c.caebRepasse);
+  if(tipos.length !== 1){ toast(tipos.length ? 'Há mais de um tipo de receita marcado como "Repasse da CAEB". Deixe só um.' : 'Marque um tipo de receita como "Repasse da CAEB" em Categorias e Grupos.', true); return; }
+  btn.disabled = true; toast('Processando...');
+  try{
+    const lancs = await buscarLancamentos(mes, ano);
+    const c = calcularCaeb(lancs);
+    const idAuto = `caeb-repasse-${key}`;
+    if(!(c.aCobrir > 0)){ toast('Não há déficit a cobrir neste mês. Gere antes a contribuição e a ajuda, se ainda não gerou.', true); return; }
+    const manual = c.repasses.filter(l => l.id !== idAuto).reduce((s,l)=>s+(l.valor||0),0);
+    if(manual > 0 && !confirm(`Já existem ${fmtBRL(manual)} de repasse lançados manualmente neste mês. Gerar mesmo assim mais ${fmtBRL(c.aCobrir)}?`)) return;
+    const ref = doc(db,'igrejas',state.igrejaAtualId,'lancamentos',idAuto);
+    const existente = await getDoc(ref);
+    const pergunta = existente.exists()
+      ? `Já existe um repasse gerado (${fmtBRL(existente.data().valor)}). Atualizar para ${fmtBRL(c.aCobrir)}?`
+      : `Lançar ${fmtBRL(c.aCobrir)} como receita "${tipos[0].nome}" em ${MESES[mes-1]}/${ano}? Faça isso quando o repasse for realmente recebido.`;
+    if(!confirm(pergunta)) return;
+    const ultimoDia = new Date(ano, mes, 0).getDate();
+    const dataStr = `${ano}-${pad2(mes)}-${pad2(ultimoDia)}`;
+    const payload = {
+      tipo:'receita', dataStr, mes, ano, competenciaKey:key, categoriaId:tipos[0].id, categoriaNome:tipos[0].nome,
+      descricao:'Repasse CAEB (cobertura do déficit do mês)', valor: c.aCobrir, membroId:null, membroNome:'', bloqueado:false,
+      origem:'caeb-repasse',
+      ...camposConta(state.contas.find(x=>x.principal)?.id || null, dataStr, 'receita', c.aCobrir),
+      criadoPor: state.user.uid, criadoPorNome: state.perfil.nome, atualizadoEm: serverTimestamp()
+    };
+    if(!existente.exists()) payload.criadoEm = serverTimestamp();
+    await setDoc(ref, payload, { merge: true });
+    toast('Repasse lançado!');
+    renderRelatorios(); renderPainel();
+  } catch(e){ console.error('Erro ao gerar repasse CAEB:', e); toast('Erro ao gerar: '+e.message, true); }
+  finally { btn.disabled = false; }
+});
+
 // ---------- RELATÓRIOS ----------
 let relInit = false;
 async function renderRelatorios(){
@@ -3074,7 +3119,7 @@ function ordenarPorFielNome(lista){
     return na.localeCompare(nb, 'pt-BR');
   });
 }
-function desenharPaginaReceitas(pdf, tituloPeriodo, receitas, rotuloEntradas = 'TOTAL DE ENTRADAS DO MÊS (R$)'){
+function desenharPaginaReceitas(pdf, tituloPeriodo, receitas, rotuloEntradas = 'TOTAL DE ENTRADAS DO MÊS (R$)', comAssinatura = true){
   const dizimos = receitas.filter(l => ehDizimo(l.categoriaNome));
   const ofertas = receitas.filter(l => !ehDizimo(l.categoriaNome));
   const totalDizimos = dizimos.reduce((s,l)=>s+l.valor,0);
@@ -3122,6 +3167,7 @@ function desenharPaginaReceitas(pdf, tituloPeriodo, receitas, rotuloEntradas = '
   // Só abre página nova pra assinatura se realmente não couber (raro,
   // meses com volume bem fora do comum) — refaz o cabeçalho pra não
   // deixar uma página "solta" sem contexto.
+  if(!comAssinatura) return y + 4; // relatório CAEB: segue com as despesas e assina só no fim
   y = garantirEspaco(pdf, y, 19, tituloPeriodo);
   y = desenharAssinaturas(pdf, y + 10);
   return y;
@@ -3156,15 +3202,14 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
     const tituloPeriodo = `RELATÓRIO DO MÊS DE ${MESES[mes-1].toUpperCase()} DE ${ano}`;
 
     // ---- PÁGINA 1: dizimistas + ofertas (por ordem alfabética do fiel) ----
-    desenharPaginaReceitas(pdf, tituloPeriodo, receitas);
-    let y;
+    let y = desenharPaginaReceitas(pdf, tituloPeriodo, receitas, 'TOTAL DE ENTRADAS DO MÊS (R$)', false);
 
-    // ---- PÁGINA(S) SEGUINTE(S): despesas (por data) + balanço final ----
-    // Sempre em página própria, para manter a separação clara do modelo —
-    // mas só isso; o conteúdo em si já está compacto o bastante para caber
-    // numa única página em qualquer mês de volume normal.
-    pdf.addPage();
-    y = cabecalhoRelatorioPdf(pdf, tituloPeriodo);
+    // ---- Despesas (por data) + balanço final, em fluxo contínuo ----
+    // Antes as despesas sempre abriam página nova porque o modelo vinha de uma
+    // planilha Excel, que não conseguia gerar tudo junto. Aqui o relatório é
+    // contínuo: só quebra quando não couber (garantirEspaco recria o cabeçalho),
+    // e a assinatura aparece uma única vez, no final.
+    y = garantirEspaco(pdf, y, 25, tituloPeriodo);
     y = faixaTitulo(pdf, y, 'RELAÇÃO DE DESPESAS');
     const linhasDespesas = despesas.map((l,i) => [i+1, [l.categoriaNome, l.descricao].filter(Boolean).join(' - '), formatarDataBR(l.dataStr), fmtBRL(l.valor)]);
     pdf.autoTable({
@@ -3217,13 +3262,13 @@ $('btnPdfCaeb').addEventListener('click', async ()=>{
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF();
     const titulo = `RELATÓRIO CAEB — ${MESES[mes-1].toUpperCase()} DE ${ano}`;
-    // PÁGINA 1: mesma relação nominal do relatório mensal, mas só com as
+    // Mesma relação nominal do relatório mensal, mas só com as
     // receitas computáveis (repasse da CAEB fora).
-    desenharPaginaReceitas(pdf, titulo, ordenarPorFielNome(c.receitasBase), 'TOTAL DE RECEITAS COMPUTÁVEIS (R$)');
-
-    // PÁGINA 2: despesas dentro do cálculo + apuração
-    pdf.addPage();
-    let y = cabecalhoRelatorioPdf(pdf, titulo);
+    // Despesas e apuração vêm logo abaixo, sem quebra de página forçada, e a
+    // assinatura aparece uma única vez, no final (garantirEspaco só quebra
+    // se realmente não couber).
+    let y = desenharPaginaReceitas(pdf, titulo, ordenarPorFielNome(c.receitasBase), 'TOTAL DE RECEITAS COMPUTÁVEIS (R$)', false);
+    y = garantirEspaco(pdf, y, 25, titulo);
     y = faixaTitulo(pdf, y, 'DESPESAS DENTRO DO CÁLCULO DA CAEB');
     const linhasD = c.despCaeb.map((l,i)=>[i+1, [l.categoriaNome, l.descricao].filter(Boolean).join(' - '), formatarDataBR(l.dataStr), fmtBRL(l.valor)]);
     pdf.autoTable({ startY:y, head:[['N°','Descrição da despesa','Data','Valor (R$)']],
@@ -3242,7 +3287,6 @@ $('btnPdfCaeb').addEventListener('click', async ()=>{
       ['Valor a ser coberto pela CAEB (bruto)', fmtBRL(c.aCobrir)],
       ['(-) Contribuição à CAEB, já incluída nas despesas', fmtBRL(c.totalContribuicao)],
       [c.liquido >= 0 ? 'VALOR LÍQUIDO A SER REPASSADO PELA CAEB' : 'VALOR LÍQUIDO A SER REPASSADO À CAEB', fmtBRL(Math.abs(c.liquido))],
-      ['Repasse da CAEB já lançado no mês (informativo)', fmtBRL(c.totalRepasse)],
     ];
     pdf.autoTable({ startY:y, body: linhasB, theme:'grid', styles:{fontSize:8.5, cellPadding:2}, margin:{bottom:12},
       columnStyles:{0:{fontStyle:'bold'}, 1:{halign:'right'}},

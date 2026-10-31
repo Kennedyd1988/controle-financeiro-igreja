@@ -578,3 +578,15 @@ Cada item de Tipos de Receita, Tipos de Despesa, Grupos e Cargos agora tem o bot
 ## Relatório CAEB detalhado e repasse líquido (versão 6)
 
 O PDF CAEB agora segue o mesmo modelo do relatório mensal: página 1 com a relação nominal de dizimistas e ofertas (só as receitas computáveis, sem o repasse da CAEB) e página 2 com as despesas CAEB e a apuração. A apuração mostra o **valor bruto a cobrir**, a contribuição à CAEB já incluída nas despesas e o **valor líquido que a CAEB precisa repassar** (bruto - contribuição, porque a igreja devolve a contribuição; se der negativo, o rótulo muda para "repassado à CAEB"). O repasse continua sendo lançado pelo valor bruto, como combinado, para o caixa zerar no mês. A página de receitas virou a função reutilizável `desenharPaginaReceitas`, usada também pelo relatório mensal. Também corrigido o rótulo "Resultado" que saía com caracteres estranhos (o símbolo "−" não existe na fonte do PDF). Atualização: index.html, app.js, sw.js e README.md (cache `softplus-cache-v9`).
+
+## Relatório CAEB em fluxo contínuo (versão 7)
+
+No PDF CAEB as despesas e a apuração agora saem logo abaixo das receitas, sem forçar nova página, e as assinaturas aparecem uma única vez, no final. A quebra de página só acontece se o conteúdo realmente não couber (`garantirEspaco`). Atualização: index.html, app.js, sw.js e README.md (cache `softplus-cache-v10`).
+
+## Relatórios em fluxo contínuo (versão 8)
+
+O relatório mensal e o relatório CAEB agora são contínuos: despesas e balanço saem logo abaixo das receitas, a página só quebra quando o conteúdo não cabe mais (o cabeçalho é refeito na nova página) e as assinaturas aparecem uma única vez, no final. A quebra forçada existia por causa do modelo em planilha Excel. Removida do PDF CAEB a linha "Repasse da CAEB já lançado no mês" (continua só no card da tela). Atualização: index.html, app.js, sw.js e README.md (cache `softplus-cache-v11`).
+
+## Repasse da CAEB gerado por botão (versão 9)
+
+No card CAEB de Relatórios, o botão "Gerar repasse da CAEB (bruto)" cria a receita do tipo marcado como "Repasse da CAEB" com o valor bruto a cobrir (depois de gerar contribuição e ajuda). Um por competência (ID fixo; apertar de novo recalcula, com confirmação), avisa se já houver repasse lançado à mão e exige exatamente um tipo de receita marcado como repasse. É um botão separado de propósito: o repasse só deve ser lançado quando o dinheiro chegar, e a conciliação bancária confirma. Atualização: index.html, app.js, sw.js e README.md (cache `softplus-cache-v12`).
