@@ -1126,8 +1126,11 @@ function renderCadastros(){
     <div class="list-row" style="gap:10px; flex-wrap:wrap;">
       <span style="flex:1; min-width:140px;">${item.nome}</span>
       ${controleCaeb(item)}
-      ${editavel ? `<button class="btn btn-sm btn-danger" data-del="${item.id}">Excluir</button>` : ''}
+      ${editavel ? `<button class="btn btn-sm" data-ren="${item.id}">Editar</button><button class="btn btn-sm btn-danger" data-del="${item.id}">Excluir</button>` : ''}
     </div>`).join('') : `<div class="empty">Nenhum item cadastrado.</div>`;
+  $('cadLista').querySelectorAll('[data-ren]').forEach(b=>{
+    b.addEventListener('click', ()=> renomearItemCadastro(b.dataset.ren));
+  });
   $('cadLista').querySelectorAll('[data-caeb-papel]').forEach(sel=>{
     sel.addEventListener('change', async ()=>{
       const valor = sel.value;
@@ -1169,6 +1172,48 @@ function renderCadastros(){
       toast('Item removido.'); renderCadastros();
     });
   });
+}
+// Renomeia um item de Categorias e Grupos. Grupos e cargos são lidos "frescos"
+// pelo ID (nada a propagar). Já os lançamentos guardam uma cópia do nome da
+// categoria (categoriaNome), usada nos relatórios e na regra de dízimo — por
+// isso, ao renomear uma categoria, atualizamos também os lançamentos dela.
+// Os que o servidor não deixa alterar (competência bloqueada ou conciliados)
+// ficam com o nome antigo e o usuário é avisado.
+async function renomearItemCadastro(id){
+  const colecao = state.cadTab;
+  const item = state[colecao].find(i => i.id === id);
+  if(!item) return;
+  const entrada = prompt('Novo nome:', item.nome);
+  if(entrada === null) return;
+  const novo = entrada.trim();
+  if(!novo){ toast('O nome não pode ficar vazio.', true); return; }
+  if(novo === item.nome) return;
+  if(state[colecao].some(i => i.id !== id && normalizarTexto(i.nome) === normalizarTexto(novo))){
+    toast('Já existe um item com esse nome.', true); return;
+  }
+  const ehCategoria = colecao === 'categoriasReceita' || colecao === 'categoriasDespesa';
+  toast('Processando...');
+  try{
+    await updateDoc(doc(db,'igrejas',state.igrejaAtualId,colecao,id), { nome: novo });
+    let atualizados = 0, ignorados = 0;
+    if(ehCategoria){
+      const snaps = await getDocs(query(collection(db,'igrejas',state.igrejaAtualId,'lancamentos'), where('categoriaId','==',id)));
+      const pendentes = snaps.docs.filter(d => d.data().categoriaNome !== novo);
+      const alvo = pendentes.filter(d => !state.competenciasBloqueadas.has(d.data().competenciaKey) && !d.data().conciliado);
+      ignorados = pendentes.length - alvo.length;
+      for(let i = 0; i < alvo.length; i += 400){
+        const batch = writeBatch(db);
+        alvo.slice(i, i+400).forEach(d => batch.update(d.ref, { categoriaNome: novo }));
+        await batch.commit();
+      }
+      atualizados = alvo.length;
+    }
+    await carregarDadosDaIgreja();
+    renderCadastros();
+    toast(ignorados
+      ? `Renomeado. ${atualizados} lançamento(s) atualizados; ${ignorados} em competência bloqueada ou conciliados mantêm o nome antigo.`
+      : 'Renomeado!', false);
+  } catch(e){ console.error(e); toast('Erro ao renomear: '+e.message, true); }
 }
 $('btnCadAdd').addEventListener('click', async ()=>{
   const nome = $('cadNovoNome').value.trim();
