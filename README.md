@@ -590,3 +590,7 @@ O relatório mensal e o relatório CAEB agora são contínuos: despesas e balan�
 ## Repasse da CAEB gerado por botão (versão 9)
 
 No card CAEB de Relatórios, o botão "Gerar repasse da CAEB (bruto)" cria a receita do tipo marcado como "Repasse da CAEB" com o valor bruto a cobrir (depois de gerar contribuição e ajuda). Um por competência (ID fixo; apertar de novo recalcula, com confirmação), avisa se já houver repasse lançado à mão e exige exatamente um tipo de receita marcado como repasse. É um botão separado de propósito: o repasse só deve ser lançado quando o dinheiro chegar, e a conciliação bancária confirma. Atualização: index.html, app.js, sw.js e README.md (cache `softplus-cache-v12`).
+
+## Tipos de receita: "Entra no relatório da CAEB" (versão 10)
+
+No cadastro de Tipos de Receita (igrejas Caebeiras) a marcação agora é só **"Entra no relatório da CAEB"** (sim/não). Por padrão entra; o tipo usado para o repasse da CAEB deve ficar **desmarcado**, para não reduzir o déficit a cobrir. Quem já tinha "Repasse da CAEB" marcado continua com o mesmo resultado (campo antigo `caebRepasse` vale enquanto o novo `caebEntra` não existir). O tipo em que o botão "Gerar repasse da CAEB" lança a receita agora é escolhido em Dados da Igreja (`caebTipoRepasseId`). Atualização: index.html, app.js, sw.js e README.md (cache `softplus-cache-v13`).

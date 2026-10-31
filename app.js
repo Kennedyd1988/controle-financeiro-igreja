@@ -1118,7 +1118,7 @@ function renderCadastros(){
       </select>`;
     }
     if(state.cadTab === 'categoriasReceita'){
-      return `<label class="caeb-check" style="font-size:12px;"><input type="checkbox" data-caeb-repasse="${item.id}" ${item.caebRepasse?'checked':''}> Repasse da CAEB</label>`;
+      return `<label class="caeb-check" style="font-size:12px;"><input type="checkbox" data-caeb-repasse="${item.id}" ${receitaEntraNaCaeb(item)?'checked':''}> Entra no relatório da CAEB</label>`;
     }
     return '';
   };
@@ -1149,7 +1149,7 @@ function renderCadastros(){
   $('cadLista').querySelectorAll('[data-caeb-repasse]').forEach(chk=>{
     chk.addEventListener('change', async ()=>{
       try{
-        await updateDoc(doc(db,'igrejas',state.igrejaAtualId,'categoriasReceita',chk.dataset.caebRepasse), { caebRepasse: chk.checked });
+        await updateDoc(doc(db,'igrejas',state.igrejaAtualId,'categoriasReceita',chk.dataset.caebRepasse), { caebEntra: chk.checked });
         await carregarDadosDaIgreja(); toast('Tipo atualizado.'); renderCadastros();
       } catch(e){ toast('Erro ao salvar: '+e.message, true); }
     });
@@ -1542,13 +1542,21 @@ async function atribuirContaEmLote(){
 }
 
 // ---------- CAEB ----------
+// Um tipo de receita "entra no relatório da CAEB" por padrão. O campo novo
+// caebEntra (marcado no cadastro) manda; se ele não existir, vale o
+// comportamento antigo: entra, a menos que estivesse marcado como repasse
+// (caebRepasse). Assim nada que já estava configurado muda de resultado.
+function receitaEntraNaCaeb(cat){
+  if(cat.caebEntra !== undefined) return !!cat.caebEntra;
+  return !cat.caebRepasse;
+}
 // Calcula o que a CAEB cobre em uma competência. Regra: só entram as despesas
 // dos tipos marcados manualmente (papel coberta/contribuição/ajuda), e as
-// receitas dos tipos marcados como "Repasse da CAEB" ficam FORA da base —
+// receitas dos tipos marcados como "não entra no relatório da CAEB" ficam FORA da base —
 // senão o próprio repasse reduziria o valor que a CAEB precisa cobrir.
 function calcularCaeb(lancs){
   const papelDe = {}; state.categoriasDespesa.forEach(c => { if(c.caebPapel) papelDe[c.id] = c.caebPapel; });
-  const repasseIds = new Set(state.categoriasReceita.filter(c => c.caebRepasse).map(c => c.id));
+  const repasseIds = new Set(state.categoriasReceita.filter(c => !receitaEntraNaCaeb(c)).map(c => c.id));
   const receitas = lancs.filter(l => l.tipo === 'receita');
   const receitasBase = receitas.filter(l => !repasseIds.has(l.categoriaId));
   const repasses = receitas.filter(l => repasseIds.has(l.categoriaId));
@@ -1601,7 +1609,7 @@ $('btnGerarCaeb').addEventListener('click', async ()=>{
   btn.disabled = true; toast('Processando...');
   try{
     const lancs = await buscarLancamentos(mes, ano);
-    const repasseIds = new Set(state.categoriasReceita.filter(c => c.caebRepasse).map(c => c.id));
+    const repasseIds = new Set(state.categoriasReceita.filter(c => !receitaEntraNaCaeb(c)).map(c => c.id));
     const base = lancs.filter(l => l.tipo === 'receita' && !repasseIds.has(l.categoriaId)).reduce((s,l)=>s+(l.valor||0),0);
     const itens = [];
     if(pct > 0) itens.push({ id:`caeb-contribuicao-${key}`, cat:tipoContrib, origem:'caeb-contribuicao', valor: Math.round(base*pct)/100, desc:`Contribuição CAEB ${pct}% sobre ${fmtBRL(base)}`, pct, base });
@@ -1637,7 +1645,7 @@ $('btnGerarCaeb').addEventListener('click', async ()=>{
 // (já com contribuição e ajuda lançadas). É um botão separado, e não parte do
 // anterior, de propósito: o repasse só deve ser registrado quando o dinheiro
 // realmente chegar (e a conciliação bancária confirma isso depois). O tipo de
-// receita marcado como "Repasse da CAEB" fica fora da base, então não há
+// receita do repasse fica fora da base (não entra no relatório), então não há
 // circularidade no cálculo.
 $('btnGerarRepasseCaeb').addEventListener('click', async ()=>{
   const btn = $('btnGerarRepasseCaeb');
@@ -1645,8 +1653,12 @@ $('btnGerarRepasseCaeb').addEventListener('click', async ()=>{
   const mes = parseInt($('relMes').value), ano = parseInt($('relAno').value);
   const key = competenciaKey(ano, mes);
   if(isCompetenciaBloqueada(mes, ano)){ toast('Esta competência está bloqueada.', true); return; }
-  const tipos = state.categoriasReceita.filter(c => c.caebRepasse);
-  if(tipos.length !== 1){ toast(tipos.length ? 'Há mais de um tipo de receita marcado como "Repasse da CAEB". Deixe só um.' : 'Marque um tipo de receita como "Repasse da CAEB" em Categorias e Grupos.', true); return; }
+  // O tipo do repasse é escolhido em Dados da Igreja; sem escolha, só vale se
+  // houver exatamente um tipo fora do relatório da CAEB.
+  const escolhido = state.categoriasReceita.find(c => c.id === state.igrejaDados?.caebTipoRepasseId);
+  const fora = state.categoriasReceita.filter(c => !receitaEntraNaCaeb(c));
+  const tipos = escolhido ? [escolhido] : fora;
+  if(tipos.length !== 1){ toast('Escolha o "Tipo de receita do repasse da CAEB" em Dados da Igreja.', true); return; }
   btn.disabled = true; toast('Processando...');
   try{
     const lancs = await buscarLancamentos(mes, ano);
@@ -2411,6 +2423,8 @@ async function renderIgreja(){
   $('igCaebDesde').value = d.caebDesde || '';
   $('igCaebPercentual').value = d.caebPercentual ?? '';
   $('igCaebAjudaFixa').value = d.caebAjudaFixa ?? '';
+  $('igCaebTipoRepasse').innerHTML = `<option value="">Selecione...</option>` + ordenarPorNome(state.categoriasReceita).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
+  $('igCaebTipoRepasse').value = d.caebTipoRepasseId || '';
   $('igCaebCampos').style.display = d.caebeira ? 'block' : 'none';
   const editavel = isAdmin();
   document.querySelectorAll('#view-igreja input').forEach(i => i.disabled = !editavel);
@@ -2438,6 +2452,7 @@ $('btnSalvarIgreja').addEventListener('click', async ()=>{
     caebDesde: $('igCaebDesde').value || null,
     caebPercentual: $('igCaebPercentual').value === '' ? null : parseFloat($('igCaebPercentual').value),
     caebAjudaFixa: $('igCaebAjudaFixa').value === '' ? null : parseFloat($('igCaebAjudaFixa').value),
+    caebTipoRepasseId: $('igCaebTipoRepasse').value || null,
   };
   try{
     await updateDoc(doc(db,'igrejas',state.igrejaAtualId), payload);
