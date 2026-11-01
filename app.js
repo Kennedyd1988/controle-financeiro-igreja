@@ -2575,7 +2575,7 @@ async function renderIgreja(){
   state.logoPendente = d.logo || null;
   atualizarPreviewLogo();
   state.logoTopoPendente = d.logoTopo || null; state.marcaPendente = d.marcaDagua || null; atualizarPreviewImgPdf();
-  $('igMarcaOpacidade').value = d.marcaOpacidade ?? 15; $('igMarcaTamanho').value = d.marcaTamanho || 'media';
+  $('igMarcaOpacidade').value = d.marcaOpacidade ?? 15; $('igMarcaTamanho').value = d.marcaTamanho || 'media'; $('igLogoTopoTamanho').value = d.logoTopoTamanho || 'media';
   $('igCorPrimaria').value = d.corPrimaria || '#156082'; $('igCorDestaque').value = d.corDestaque || '#F69238';
   $('igContatoNome').value = d.contatoNome || ''; $('igContatoTelefone').value = d.contatoTelefone || '';
   $('igNome').value = d.nome||''; $('igCnpj').value = d.cnpj||'';
@@ -2619,7 +2619,7 @@ $('btnSalvarIgreja').addEventListener('click', async ()=>{
     logo: state.logoPendente || null,
     // Identidade visual e contatos da agenda semanal em PDF (cada igreja define os seus)
     logoTopo: state.logoTopoPendente || null, marcaDagua: state.marcaPendente || null,
-    marcaTamanho: $('igMarcaTamanho').value || 'media',
+    marcaTamanho: $('igMarcaTamanho').value || 'media', logoTopoTamanho: $('igLogoTopoTamanho').value || 'media',
     marcaOpacidade: Math.min(60, Math.max(3, parseInt($('igMarcaOpacidade').value) || 15)),
     corPrimaria: $('igCorPrimaria').value || '#156082', corDestaque: $('igCorDestaque').value || '#F69238',
     contatoNome: $('igContatoNome').value.trim(), contatoTelefone: $('igContatoTelefone').value.trim(),

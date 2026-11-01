@@ -99,7 +99,10 @@ export function desenharAgendaPdf(JsPDF, dados){
   function cabecalhoPagina(primeira){
     let y = 4;
     if(igreja.logoTopo){
-      const dh = imagemCaixa(igreja.logoTopo, 105, y, 120, 34);
+      // Tamanho escolhido em Dados da Igreja (proporção sempre mantida). Logo maior empurra o título
+      // para baixo e a tabela se ajusta sozinha (reduz um pouco as fontes, se precisar).
+      const [lw, lh_] = { pequena:[100,28], media:[120,34], grande:[150,44], extra:[190,56] }[igreja.logoTopoTamanho] || [120,34];
+      const dh = imagemCaixa(igreja.logoTopo, 105, y, lw, lh_);
       y += dh || 0;
     } else if(igreja.logo){
       const dh = imagemCaixa(igreja.logo, 105, y, 24, 24);
