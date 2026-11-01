@@ -11,6 +11,8 @@ import {
   getAggregateFromServer, sum
 } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
 
+import { iniciarAgendas, renderAgendas, resetarAgendas, renderPainelAgendas, FUNCOES_PADRAO } from "./agendas.js?v=16";
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -29,6 +31,7 @@ const ABAS_CONFIGURAVEIS = [
   { id: 'competencias', label: 'Competências' },
   { id: 'campanhas', label: 'Campanhas' },
   { id: 'financeiro', label: 'Financeiro (contas, extrato e conciliação)' },
+  { id: 'agendas', label: 'Agendas semanais (programação, escalas e mensagens)' },
 ];
 const TODAS_ABAS = ABAS_CONFIGURAVEIS.map(a => a.id);
 
@@ -59,6 +62,7 @@ const state = {
   editandoLancId: null,
   editandoFielId: null,
   editandoUsuarioUid: null,
+  logoTopoPendente: null, marcaPendente: null,
   logoPendente: undefined, // undefined = não mexeu; null = removida; string = nova
   fieisPagina: [],     // fiéis carregados na tela atual (paginado)
   fieisCursor: null,   // último doc da página, para "carregar mais"
@@ -476,6 +480,7 @@ async function onIgrejaChange(){
   state.fieisPagina = []; state.fieisCursor = null; state.fieisTemMais = false; state.fieisBuscaAtual = '';
   if($('fieisBusca')) $('fieisBusca').value = '';
   state.campanhas = []; state.campanhaAtualId = null; state.campanhaAtualDados = null;
+  resetarAgendas();   // cultos padrão/lembretes/rodízio são por igreja
   mostrarCarregando();
   await carregarDadosDaIgreja();
   await carregarCompetenciasBloqueadas();
@@ -596,7 +601,7 @@ function refreshView(name){
     painel: renderPainel, lancamentos: renderLancamentos, fieis: renderFieis,
     cadastros: renderCadastros, relatorios: renderRelatorios, competencias: renderCompetencias,
     igreja: renderIgreja, usuarios: renderUsuarios, novaIgreja: ()=>{},
-    importar: renderImportar, campanhas: renderCampanhas, financeiro: renderFinanceiro,
+    importar: renderImportar, campanhas: renderCampanhas, financeiro: renderFinanceiro, agendas: renderAgendas,
   };
   if(map[name]) comCarregando(Promise.resolve(map[name]()));
 }
@@ -645,6 +650,7 @@ async function renderPainel(){
     });
   }
   $('painelIgrejaNome').textContent = igrejaAtual()?.nome || '';
+  renderPainelAgendas($('painelAgendas'));   // avisos de mensagens/lembretes do dia (não bloqueia o resto)
   $('btnNovoLancamentoPainel').style.display = podeEditarAba('lancamentos') ? 'inline-flex' : 'none';
   if(!temAcesso('lancamentos')){
     $('statReceitas').textContent = '—'; $('statDespesas').textContent = '—'; $('statSaldo').textContent = '—';
@@ -1114,8 +1120,14 @@ function abrirModalFiel(f){
   $('fFormGrupo').innerHTML = '<option value="">—</option>' + ordenarPorNome(state.grupos).map(g=>`<option value="${g.id}">${g.nome}</option>`).join('');
   $('fFormCargo').value = f?.cargoId || '';
   $('fFormGrupo').value = f?.grupoId || '';
+  // Programação (agendas): nome curto que aparece na escala e funções habilitadas para o rodízio
+  $('fFormNomeProg').value = f?.nomeProg || '';
+  $('fFormParticipaProg').checked = !!f?.participaProg;
+  $('fFormFuncoesProg').innerHTML = FUNCOES_PADRAO.map(fn => `<label style="display:flex; gap:6px; align-items:center; font-weight:400;"><input type="checkbox" data-fn="${fn.id}" style="width:15px;height:15px;" ${(f?.funcoesProg||[]).includes(fn.id)?'checked':''}> ${fn.label}</label>`).join('');
+  $('fFormFuncoesProgBox').style.display = $('fFormParticipaProg').checked ? 'block' : 'none';
   $('modalFiel').classList.add('active');
 }
+$('fFormParticipaProg').addEventListener('change', ()=>{ $('fFormFuncoesProgBox').style.display = $('fFormParticipaProg').checked ? 'block' : 'none'; });
 $('btnCancelarFiel').addEventListener('click', ()=> $('modalFiel').classList.remove('active'));
 $('btnSalvarFiel').addEventListener('click', async ()=>{
   if(!validarObrigatorios([{id:'fFormNome', nome:'Nome'}])) return;
@@ -1125,6 +1137,8 @@ $('btnSalvarFiel').addEventListener('click', async ()=>{
     cargoId: $('fFormCargo').value || null, grupoId: $('fFormGrupo').value || null,
     telefone: $('fFormTelefone').value.trim(), email: $('fFormEmail').value.trim(),
     cpf: $('fFormCpf').value.trim(), rg: $('fFormRg').value.trim(), observacoes: $('fFormObs').value.trim(),
+    nomeProg: $('fFormNomeProg').value.trim(), participaProg: $('fFormParticipaProg').checked,
+    funcoesProg: [...document.querySelectorAll('#fFormFuncoesProg [data-fn]')].filter(c=>c.checked).map(c=>c.dataset.fn),
   };
   try{
     if(state.editandoFielId){
@@ -2494,6 +2508,48 @@ function redimensionarImagem(file, maxSize = 240, qualidade = 0.82){
     reader.readAsDataURL(file);
   });
 }
+// Versão para imagens grandes do cabeçalho/marca d'água do PDF: preenche o fundo
+// de branco (JPEG não tem transparência — sem isso PNG transparente vira preto)
+// e reduz a qualidade até caber ~350KB, porque tudo isso mora no documento da
+// igreja (limite do Firestore: 1MB por documento).
+function redimensionarImagemBranco(file, maxLado = 1000, qualidade = 0.9){
+  return new Promise((resolve, reject)=>{
+    if(!file.type.startsWith('image/')){ reject(new Error('Selecione um arquivo de imagem.')); return; }
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const f = Math.min(1, maxLado / Math.max(img.width, img.height));
+        const w = Math.round(img.width*f), h = Math.round(img.height*f);
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0,0,w,h); cx.drawImage(img,0,0,w,h);
+        let q = qualidade, url = cv.toDataURL('image/jpeg', q);
+        while(url.length*0.75 > 350*1024 && q > 0.4){ q -= 0.1; url = cv.toDataURL('image/jpeg', q); }
+        resolve(url);
+      };
+      img.onerror = ()=> reject(new Error('Não foi possível ler a imagem.'));
+      img.src = e.target.result;
+    };
+    reader.onerror = ()=> reject(new Error('Não foi possível ler o arquivo.'));
+    reader.readAsDataURL(file);
+  });
+}
+function atualizarPreviewImgPdf(){
+  [['igLogoTopoPreview', state.logoTopoPendente], ['igMarcaPreview', state.marcaPendente]].forEach(([id, src])=>{
+    const p = $(id); if(src){ p.src = src; p.style.display = 'block'; } else { p.removeAttribute('src'); p.style.display = 'none'; }
+  });
+}
+$('igLogoTopoFile').addEventListener('change', async (e)=>{
+  const f = e.target.files[0]; if(!f) return;
+  try{ state.logoTopoPendente = await redimensionarImagemBranco(f, 1000, 0.9); atualizarPreviewImgPdf(); } catch(err){ toast(err.message, true); }
+});
+$('igMarcaFile').addEventListener('change', async (e)=>{
+  const f = e.target.files[0]; if(!f) return;
+  try{ state.marcaPendente = await redimensionarImagemBranco(f, 900, 0.85); atualizarPreviewImgPdf(); } catch(err){ toast(err.message, true); }
+});
+$('btnRemoverLogoTopo').addEventListener('click', ()=>{ state.logoTopoPendente = null; $('igLogoTopoFile').value = ''; atualizarPreviewImgPdf(); });
+$('btnRemoverMarca').addEventListener('click', ()=>{ state.marcaPendente = null; $('igMarcaFile').value = ''; atualizarPreviewImgPdf(); });
+
 function atualizarPreviewLogo(){
   const prev = $('igLogoPreview');
   if(state.logoPendente){ prev.src = state.logoPendente; }
@@ -2518,6 +2574,10 @@ async function renderIgreja(){
   const d = snap.data() || {};
   state.logoPendente = d.logo || null;
   atualizarPreviewLogo();
+  state.logoTopoPendente = d.logoTopo || null; state.marcaPendente = d.marcaDagua || null; atualizarPreviewImgPdf();
+  $('igMarcaOpacidade').value = d.marcaOpacidade ?? 15;
+  $('igCorPrimaria').value = d.corPrimaria || '#156082'; $('igCorDestaque').value = d.corDestaque || '#F69238';
+  $('igContatoNome').value = d.contatoNome || ''; $('igContatoTelefone').value = d.contatoTelefone || '';
   $('igNome').value = d.nome||''; $('igCnpj').value = d.cnpj||'';
   $('igNomeRelatorio').value = d.nomeRelatorio||'';
   $('igPastorBusca').value = d.pastor||''; $('igPastorId').value = d.pastorFielId||'';
@@ -2538,6 +2598,8 @@ async function renderIgreja(){
   document.querySelectorAll('#view-igreja input').forEach(i => i.disabled = !editavel);
   $('btnSalvarIgreja').style.display = editavel ? 'inline-flex' : 'none';
   $('btnRemoverLogo').style.display = editavel ? 'inline-flex' : 'none';
+  $('btnRemoverLogoTopo').style.display = editavel ? 'inline-flex' : 'none';
+  $('btnRemoverMarca').style.display = editavel ? 'inline-flex' : 'none';
 }
 // Nome da igreja é sempre buscado "fresco" em igrejas/{id} no login (ver
 // carregarIgrejasDoUsuario) — por isso não precisamos mais propagar essa
@@ -2555,6 +2617,11 @@ $('btnSalvarIgreja').addEventListener('click', async ()=>{
     endereco: $('igEndereco').value.trim(), bairro: $('igBairro').value.trim(),
     cidade: $('igCidade').value.trim(), estado: $('igEstado').value.trim(), cep: $('igCep').value.trim(),
     logo: state.logoPendente || null,
+    // Identidade visual e contatos da agenda semanal em PDF (cada igreja define os seus)
+    logoTopo: state.logoTopoPendente || null, marcaDagua: state.marcaPendente || null,
+    marcaOpacidade: Math.min(60, Math.max(3, parseInt($('igMarcaOpacidade').value) || 15)),
+    corPrimaria: $('igCorPrimaria').value || '#156082', corDestaque: $('igCorDestaque').value || '#F69238',
+    contatoNome: $('igContatoNome').value.trim(), contatoTelefone: $('igContatoTelefone').value.trim(),
     // CAEB (campos opcionais — igrejas antigas simplesmente não os têm)
     caebeira: $('igCaebeira').checked,
     caebDesde: $('igCaebDesde').value || null,
@@ -3665,3 +3732,10 @@ function instalarSetasAno(idAno){
  ['finExtMes','finExtAno'],['finConcMes','finConcAno'],['lFormCompMes','lFormCompAno']]
   .forEach(([m,y]) => instalarSetasMesAno(m, y));
 ['relAnoAnual','finSaldosAno'].forEach(instalarSetasAno);
+
+
+// ---------- Agendas semanais (módulo separado em agendas.js) ----------
+iniciarAgendas({
+  db, state, toast, comCarregando, temAcesso, podeEditarAba, normalizarTexto, ordenarPorNome,
+  dataLocalISO, validarObrigatorios, switchView,
+});

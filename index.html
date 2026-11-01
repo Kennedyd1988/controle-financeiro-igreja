@@ -422,7 +422,7 @@
         </div>
       </div>
       <button class="btn btn-sm" id="btnInstalarLogin" style="margin-top:16px;">⬇️ Instalar app no celular</button>
-      <div class="versao-app" style="margin-top:10px; font-size:11px; color:var(--muted,#8a94a6);">Versão 15</div>
+      <div class="versao-app" style="margin-top:10px; font-size:11px; color:var(--muted,#8a94a6);">Versão 16</div>
     </div>
   </div>
 
@@ -462,6 +462,7 @@
       <button class="nav-btn" data-view="competencias"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Competências</button>
       <button class="nav-btn" data-view="campanhas"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22V3"/></svg>Campanhas</button>
       <button class="nav-btn" data-view="financeiro"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h18"/><path d="M5 10V20M9.5 10V20M14.5 10V20M19 10V20"/><path d="M2 20h20"/><path d="M12 3 3 8h18z"/></svg>Financeiro</button>
+      <button class="nav-btn" data-view="agendas"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h3M8 18h3M14 14h2"/></svg>Agendas semanais</button>
       <button class="nav-btn" data-view="igreja"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M10 4h4"/><path d="M4 21V10l8-6 8 6v11"/><path d="M9 21v-6h6v6"/></svg>Dados da Igreja</button>
       <button class="nav-btn" data-view="usuarios" id="navUsuarios" style="display:none;"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 11 2 2 4-4"/></svg>Usuários</button>
       <button class="nav-btn" data-view="importar" id="navImportar" style="display:none;"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>Importar dados</button>
@@ -469,7 +470,7 @@
 
       <div class="sidebar-foot">
         <button class="btn btn-sm" id="btnInstalarSidebar" style="width:100%; margin-bottom:10px;">⬇️ Instalar app</button>
-        <div class="versao-app" style="text-align:center; font-size:11px; opacity:.7; margin-bottom:8px;">Versão 15</div>
+        <div class="versao-app" style="text-align:center; font-size:11px; opacity:.7; margin-bottom:8px;">Versão 16</div>
         <div class="user-chip">
           <div class="user-avatar" id="userAvatar">—</div>
           <div class="user-chip-info">
@@ -535,6 +536,7 @@
             <div class="stat-value num" id="statSaldoAtual" style="font-size:19px;">R$ 0,00</div>
           </div>
         </div>
+        <div id="painelAgendas"></div>
         <div class="card" id="painelBancoCard" style="margin-bottom:18px; display:none;">
           <div class="stat-top">
             <div class="stat-icon brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V10M19 21V10M9 21V10M15 21V10M2 10l10-7 10 7"/></svg></div>
@@ -924,6 +926,8 @@
         </div>
       </section>
 
+      <section class="view" id="view-agendas"></section>
+
       <section class="view" id="view-igreja">
         <div class="view-header">
           <div>
@@ -965,6 +969,24 @@
             <div class="field"><label>Cidade</label><input id="igCidade"></div>
             <div class="field"><label>Estado</label><input id="igEstado"></div>
             <div class="field"><label>CEP</label><input id="igCep"></div>
+          </div>
+          <!-- Agenda semanal em PDF: identidade visual e contatos do rodapé de cada igreja -->
+          <div class="caeb-box">
+            <div style="font-weight:600; margin-bottom:8px;">Agenda semanal (PDF)</div>
+            <div class="grid grid-2">
+              <div class="field"><label>Logo do topo (cabeçalho do PDF)</label>
+                <img id="igLogoTopoPreview" style="max-width:100%; max-height:70px; display:none; margin-bottom:6px;">
+                <input type="file" id="igLogoTopoFile" accept="image/*"> <button class="btn btn-sm" id="btnRemoverLogoTopo" type="button">Remover</button></div>
+              <div class="field"><label>Marca d'água (desenho/símbolo ao fundo)</label>
+                <img id="igMarcaPreview" style="max-width:100%; max-height:70px; display:none; margin-bottom:6px;">
+                <input type="file" id="igMarcaFile" accept="image/*"> <button class="btn btn-sm" id="btnRemoverMarca" type="button">Remover</button></div>
+              <div class="field"><label>Intensidade da marca d'água (%)</label><input type="number" id="igMarcaOpacidade" min="3" max="60" value="15"></div>
+              <div class="field"><label>Cores do PDF (principal / destaque)</label>
+                <div style="display:flex; gap:8px;"><input type="color" id="igCorPrimaria" value="#156082" style="width:60px; padding:2px;"><input type="color" id="igCorDestaque" value="#F69238" style="width:60px; padding:2px;"></div></div>
+              <div class="field"><label>Contato no rodapé: nome/função</label><input id="igContatoNome" placeholder="Ex: Kennedy Francelino (Pastor Local)"></div>
+              <div class="field"><label>Contato no rodapé: telefone</label><input id="igContatoTelefone" placeholder="Ex: (84) 9.9999-9999"></div>
+            </div>
+            <div class="abas-hint">Endereço, CNPJ, Instagram e e-mail do rodapé vêm dos campos acima.</div>
           </div>
           <!-- CAEB: tudo opcional; igreja que nunca marcar "Caebeira" continua exatamente como antes. -->
           <div class="caeb-box">
@@ -1123,6 +1145,9 @@
       <div class="field"><label>CPF</label><input id="fFormCpf"></div>
       <div class="field"><label>RG</label><input id="fFormRg"></div>
       <div class="field"><label>Observações</label><input id="fFormObs"></div>
+      <div class="field"><label>Nome para programação</label><input id="fFormNomeProg" placeholder="Ex: Dc. Lucas — aparece na agenda semanal"></div>
+      <div class="field"><label style="display:flex; gap:8px; align-items:center; font-weight:400;"><input type="checkbox" id="fFormParticipaProg" style="width:16px;height:16px;"> Participa da programação (entra no rodízio das escalas)</label></div>
+      <div class="field" id="fFormFuncoesProgBox" style="display:none;"><label>Funções que pode exercer</label><div id="fFormFuncoesProg" style="display:flex; gap:12px; flex-wrap:wrap;"></div></div>
       <div class="modal-actions">
         <button class="btn" id="btnCancelarFiel">Cancelar</button>
         <button class="btn btn-primary" id="btnSalvarFiel">Salvar</button>
@@ -1325,6 +1350,6 @@
     <button id="btnFecharInstalarBanner" aria-label="Fechar">×</button>
   </div>
 
-  <script type="module" src="app.js?v=15"></script>
+  <script type="module" src="app.js?v=16"></script>
 </body>
 </html>

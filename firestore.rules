@@ -130,7 +130,8 @@ service cloud.firestore {
       }
 
       match /membros/{docId} {
-        allow read: if temAcessoAba(igrejaId, 'fieis');
+        // 'agendas' também lê: o seletor de escalas busca quem participa da programação.
+        allow read: if temAcessoAba(igrejaId, 'fieis') || temAcessoAba(igrejaId, 'agendas');
         allow write: if podeEditarAba(igrejaId, 'fieis');
       }
 
@@ -180,6 +181,14 @@ service cloud.firestore {
 
       // Contas bancárias / caixa. Leitura também para quem lança (precisa
       // escolher a conta no lançamento); escrita só com a aba "financeiro".
+      // ---- Agendas semanais: tudo sob a aba 'agendas' ----
+      match /cultosPadrao/{docId} { allow read: if temAcessoAba(igrejaId, 'agendas'); allow write: if podeEditarAba(igrejaId, 'agendas'); }
+      match /agendas/{docId}      { allow read: if temAcessoAba(igrejaId, 'agendas'); allow write: if podeEditarAba(igrejaId, 'agendas'); }
+      match /participacoes/{docId}{ allow read: if temAcessoAba(igrejaId, 'agendas'); allow write: if podeEditarAba(igrejaId, 'agendas'); }
+      match /lembretes/{docId}    { allow read: if temAcessoAba(igrejaId, 'agendas'); allow write: if podeEditarAba(igrejaId, 'agendas'); }
+      match /mensagens/{docId}    { allow read: if temAcessoAba(igrejaId, 'agendas'); allow write: if podeEditarAba(igrejaId, 'agendas'); }
+      match /configAgenda/{docId} { allow read: if temAcessoAba(igrejaId, 'agendas'); allow write: if podeEditarAba(igrejaId, 'agendas'); }
+
       match /contas/{contaId} {
         allow read: if temAcessoAba(igrejaId, 'lancamentos') || temAcessoAba(igrejaId, 'financeiro');
         allow write: if podeEditarAba(igrejaId, 'financeiro');
