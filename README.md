@@ -594,3 +594,21 @@ No card CAEB de Relatórios, o botão "Gerar repasse da CAEB (bruto)" cria a rec
 ## Tipos de receita: "Entra no relatório da CAEB" (versão 10)
 
 No cadastro de Tipos de Receita (igrejas Caebeiras) a marcação agora é só **"Entra no relatório da CAEB"** (sim/não). Por padrão entra; o tipo usado para o repasse da CAEB deve ficar **desmarcado**, para não reduzir o déficit a cobrir. Quem já tinha "Repasse da CAEB" marcado continua com o mesmo resultado (campo antigo `caebRepasse` vale enquanto o novo `caebEntra` não existir). O tipo em que o botão "Gerar repasse da CAEB" lança a receita agora é escolhido em Dados da Igreja (`caebTipoRepasseId`). Atualização: index.html, app.js, sw.js e README.md (cache `softplus-cache-v13`).
+
+## Duplicar lançamento (versão 11)
+
+Cada linha da lista de Lançamentos ganhou o botão **Duplicar** (receitas e despesas). Ele abre o formulário como lançamento novo, com todos os campos já preenchidos (data, competência, categoria, conta, fiel, descrição e valor) e só grava quando você clicar em Salvar. Funciona também a partir de lançamentos de competência bloqueada ou conciliados; a cópia não herda a conciliação. Atualização: index.html, app.js, sw.js e README.md (cache `softplus-cache-v14`).
+
+## Setas para mudar de mês e ano (versão 12)
+
+Todos os seletores de mês/ano (Painel, Lançamentos, Relatórios, Competências, Extrato, Conciliação e a competência do formulário de lançamento) ganharam setas ‹ › ao lado de cada lista, no estilo "‹ Janeiro › ‹ 2026 ›". Passar de dezembro para janeiro avança o ano (e vice-versa). As setas só mudam o valor da lista e disparam o mesmo evento, então cada tela recarrega como se a lista tivesse sido usada; se o ano pedido não existir na lista, a opção é criada. Os seletores só de ano (fluxo anual e saldos mês a mês) também têm setas. Atualização: index.html, app.js, sw.js e README.md (cache `softplus-cache-v15`).
+
+## Relatório geral x CAEB: exclusões e saldo anterior separados (versão 13)
+
+Só para igrejas Caebeiras.
+
+- **Entra no relatório geral:** cada tipo de receita e de despesa tem essa marcação (padrão: entra, campo `geralEntra`). Tipos desmarcados ficam fora do **PDF do relatório mensal** e do saldo anterior dele. Painel, telas, PDF anual, extrato e conciliação continuam mostrando tudo.
+- **Saldo anterior separado:** o relatório geral e o relatório CAEB têm cada um o seu. Cada um acumula sozinho, desde o início ou a partir de uma competência, só o que entra nele; em Dados da Igreja dá para informar um **saldo inicial** e a competência em que ele vale (`geralSaldoInicial/Desde`, `caebSaldoInicial/Desde`). Meses anteriores à competência de início mostram 0. O saldo da CAEB soma todas as receitas (inclusive repasses recebidos) e subtrai as despesas dentro do cálculo da CAEB; com o repasse lançado pelo valor bruto ele volta a zero a cada mês.
+- **Efeito na CAEB:** o valor a ser coberto passa a usar o saldo **acumulado** (saldo anterior + resultado do mês); déficit anterior ainda não repassado aumenta o valor, sobra reduz. Card e PDF CAEB mostram resultado do mês, saldo anterior e saldo acumulado.
+
+Atualização: index.html, app.js, sw.js e README.md (cache `softplus-cache-v16`).
