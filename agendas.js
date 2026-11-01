@@ -346,6 +346,7 @@ function desenharSemana(){
     <div class="ag-acoes">
       ${ed ? `<button class="btn btn-primary" id="agBtnSalvar">Salvar semana</button>` : ''}
       <button class="btn" id="agBtnPdf">Gerar PDF</button>
+      <button class="btn" id="agBtnImg">Imagem JPG (WhatsApp)</button>
       ${ed ? `<button class="btn" id="agBtnPublicar">${ehBloq ? 'Reabrir para edição' : 'Marcar como publicada'}</button>` : ''}
       ${ed && !ehBloq ? `<button class="btn" id="agBtnModelo">Aplicar semana modelo</button>
       <button class="btn" id="agBtnCopiarAnt">Copiar da semana anterior</button>` : ''}
@@ -372,6 +373,7 @@ function ligarEventosSemana(){
   $('agNext').onclick = ()=> irSemana(addDias(S.semanaIni,7));
   $('agIrData').onchange = (e)=> { if(e.target.value) irSemana(segundaDe(e.target.value)); };
   $('agBtnPdf').onclick = gerarPdf;
+  $('agBtnImg').onclick = gerarImagem;
   if($('agBtnSalvar')) $('agBtnSalvar').onclick = ()=> comCarga(salvarSemana());
   if($('agBtnPublicar')) $('agBtnPublicar').onclick = async ()=>{
     S.agenda.status = bloqueada() ? 'rascunho' : 'publicada';
@@ -708,14 +710,79 @@ function escolherPessoa(p){
 // ======================================================================
 // PDF
 // ======================================================================
+function construirPdf(){
+  const ag = clone(S.agenda);
+  ag.dias.forEach(ordenarLinhas);
+  const cultos = {}; S.cultos.forEach(c => { if(c.icone) cultos[c.id] = { icone: c.icone }; });
+  return desenharAgendaPdf(window.jspdf.jsPDF, { agenda: ag, igreja: C.state.igrejaDados || {}, cultos, tituloSemana: tituloSemana(S.semanaIni) });
+}
 async function gerarPdf(){
-  try{
-    const ag = clone(S.agenda);
-    ag.dias.forEach(ordenarLinhas);
-    const cultos = {}; S.cultos.forEach(c => { if(c.icone) cultos[c.id] = { icone: c.icone }; });
-    const pdf = desenharAgendaPdf(window.jspdf.jsPDF, { agenda: ag, igreja: C.state.igrejaDados || {}, cultos, tituloSemana: tituloSemana(S.semanaIni) });
-    pdf.save(`agenda_semanal_${S.semanaIni}.pdf`);
-  } catch(e){ C.toast('Erro ao gerar PDF: ' + e.message, true); console.error(e); }
+  try{ construirPdf().save(`agenda_semanal_${S.semanaIni}.pdf`); }
+  catch(e){ C.toast('Erro ao gerar PDF: ' + e.message, true); console.error(e); }
+}
+
+// ---------- imagem JPG (para compartilhar no WhatsApp) ----------
+// O PDF é a fonte única do layout: em vez de desenhar tudo de novo, ele é convertido em imagem
+// com o pdf.js (carregado só quando alguém pede a imagem, para não pesar no uso normal).
+let pdfjsPromise = null;
+function carregarPdfJs(){
+  if(pdfjsPromise) return pdfjsPromise;
+  const base = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+  pdfjsPromise = new Promise((resolve, reject)=>{
+    const sc = document.createElement('script'); sc.src = base + 'pdf.min.js';
+    sc.onload = async ()=>{
+      const lib = window.pdfjsLib;
+      // O worker precisa vir do mesmo "site" que a página: baixa o texto e serve como blob.
+      try{ const w = await (await fetch(base + 'pdf.worker.min.js')).text();
+        lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([w], { type:'text/javascript' })); }
+      catch(e){ lib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js'; }
+      resolve(lib);
+    };
+    sc.onerror = ()=>{ pdfjsPromise = null; reject(new Error('Não foi possível carregar o conversor de imagem. Verifique a internet.')); };
+    document.head.appendChild(sc);
+  });
+  return pdfjsPromise;
+}
+async function pdfParaJpgs(pdf, escala = 2.4){
+  const lib = await carregarPdfJs();
+  const doc = await lib.getDocument({ data: pdf.output('arraybuffer') }).promise;
+  const blobs = [];
+  for(let i = 1; i <= doc.numPages; i++){
+    const pg = await doc.getPage(i), vp = pg.getViewport({ scale: escala });
+    const cv = document.createElement('canvas'); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+    const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
+    await pg.render({ canvasContext: cx, viewport: vp }).promise;
+    blobs.push(await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92)));
+  }
+  return blobs;
+}
+async function gerarImagem(){
+  await comCarga((async ()=>{
+    try{
+      const blobs = await pdfParaJpgs(construirPdf());
+      S.imgs = blobs.map((b, i) => new File([b], `agenda_semanal_${S.semanaIni}${blobs.length > 1 ? '_' + (i+1) : ''}.jpg`, { type:'image/jpeg' }));
+      S.imgUrls = S.imgs.map(f => URL.createObjectURL(f));
+      $('agImgPrev').innerHTML = S.imgUrls.map(u => `<img src="${u}" style="max-width:100%; border:1px solid var(--line); margin-bottom:8px;">`).join('');
+      const podeCompartilhar = !!(navigator.canShare && navigator.share && navigator.canShare({ files: S.imgs }));
+      $('agImgShare').style.display = podeCompartilhar ? 'inline-flex' : 'none';
+      $('agModalImg').classList.add('active');
+    } catch(e){ C.toast('Erro ao gerar a imagem: ' + e.message, true); console.error(e); }
+  })());
+}
+function fecharImagem(){
+  $('agModalImg').classList.remove('active');
+  (S.imgUrls || []).forEach(u => URL.revokeObjectURL(u)); S.imgUrls = []; $('agImgPrev').innerHTML = '';
+}
+function baixarImagens(){
+  S.imgs.forEach((f, i) => setTimeout(()=>{
+    const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=> URL.revokeObjectURL(a.href), 4000);
+  }, i * 400));
+}
+async function compartilharImagens(){
+  // Abre a folha de compartilhamento do celular (WhatsApp aparece na lista). Cancelar não é erro.
+  try{ await navigator.share({ files: S.imgs, title: 'Agenda semanal', text: `Agenda semanal — ${tituloSemana(S.semanaIni)}` }); }
+  catch(e){ if(e.name !== 'AbortError') C.toast('Não foi possível compartilhar: ' + e.message + '. Use "Baixar JPG".', true); }
 }
 
 // ======================================================================
@@ -1062,6 +1129,12 @@ function montarModais(){
       <button class="btn btn-primary" id="agPickUsarLivre">Usar nome digitado</button>
     </div></div></div>
 
+  <div class="modal-backdrop" id="agModalImg"><div class="modal" style="max-width:560px; width:96vw; max-height:92vh; overflow:auto;">
+    <h3>Imagem da agenda</h3>
+    <div class="abas-hint" style="margin-bottom:8px;">Pronta para enviar. No celular, "Compartilhar" abre a lista de aplicativos (escolha o WhatsApp); no computador, baixe e anexe a imagem na conversa.</div>
+    <div id="agImgPrev"></div>
+    <div class="modal-actions"><button class="btn" id="agImgFechar">Fechar</button><button class="btn" id="agImgBaixar">Baixar JPG</button><button class="btn btn-primary" id="agImgShare">Compartilhar</button></div></div></div>
+
   <div class="modal-backdrop" id="agModalDup"><div class="modal" style="max-width:440px;">
     <h3 id="agDupTitulo">Duplicar</h3>
     <div class="field"><label id="agDupDestinoLbl">Destino</label><input type="date" id="agDupDestino"></div>
@@ -1132,6 +1205,7 @@ function montarModais(){
     const n = $('agPickLivre').value.trim(); if(!n){ C.toast('Digite o nome da pessoa.', true); return; }
     escolherPessoa({ membroId: '', nome: n, tel: $('agPickLivreTel').value.trim() });
   };
+  $('agImgFechar').onclick = fecharImagem; $('agImgBaixar').onclick = baixarImagens; $('agImgShare').onclick = compartilharImagens;
   $('agDupCancelar').onclick = ()=> fechar('agModalDup'); $('agDupOk').onclick = confirmarDuplicar;
   $('agCultoCancelar').onclick = ()=> fechar('agModalCulto'); $('agCultoSalvar').onclick = salvarCulto;
   $('agCultoIconeFile').onchange = async (e)=>{
