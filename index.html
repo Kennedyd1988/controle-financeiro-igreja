@@ -422,7 +422,7 @@
         </div>
       </div>
       <button class="btn btn-sm" id="btnInstalarLogin" style="margin-top:16px;">⬇️ Instalar app no celular</button>
-      <div class="versao-app" style="margin-top:10px; font-size:11px; color:var(--muted,#8a94a6);">Versão 14</div>
+      <div class="versao-app" style="margin-top:10px; font-size:11px; color:var(--muted,#8a94a6);">Versão 15</div>
     </div>
   </div>
 
@@ -469,7 +469,7 @@
 
       <div class="sidebar-foot">
         <button class="btn btn-sm" id="btnInstalarSidebar" style="width:100%; margin-bottom:10px;">⬇️ Instalar app</button>
-        <div class="versao-app" style="text-align:center; font-size:11px; opacity:.7; margin-bottom:8px;">Versão 14</div>
+        <div class="versao-app" style="text-align:center; font-size:11px; opacity:.7; margin-bottom:8px;">Versão 15</div>
         <div class="user-chip">
           <div class="user-avatar" id="userAvatar">—</div>
           <div class="user-chip-info">
@@ -530,10 +530,18 @@
           <div class="card">
             <div class="stat-top">
               <div class="stat-icon brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
-              <div class="stat-label">Saldo atual (anterior + mês)</div>
+              <div class="stat-label">Saldo atual (anterior + mês, por competência)</div>
             </div>
             <div class="stat-value num" id="statSaldoAtual" style="font-size:19px;">R$ 0,00</div>
           </div>
+        </div>
+        <div class="card" id="painelBancoCard" style="margin-bottom:18px; display:none;">
+          <div class="stat-top">
+            <div class="stat-icon brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V10M19 21V10M9 21V10M15 21V10M2 10l10-7 10 7"/></svg></div>
+            <div class="stat-label">Saldo no banco (fim do mês, pela data real)</div>
+          </div>
+          <div class="stat-value num" id="statSaldoBanco" style="font-size:19px;">R$ 0,00</div>
+          <div class="stat-label" id="statSaldoBancoNota" style="margin-top:6px;"></div>
         </div>
         <div class="card">
           <div style="font-weight:600; margin-bottom:10px;">Últimos lançamentos</div>
@@ -1317,6 +1325,6 @@
     <button id="btnFecharInstalarBanner" aria-label="Fechar">×</button>
   </div>
 
-  <script type="module" src="app.js?v=14"></script>
+  <script type="module" src="app.js?v=15"></script>
 </body>
 </html>

@@ -653,17 +653,56 @@ async function renderPainel(){
     return;
   }
   const mes = parseInt($('painelMes').value), ano = parseInt($('painelAno').value);
-  const [receitas, despesas, ultimos, saldoAnterior] = await Promise.all([
-    somarLancamentos(mes, ano, 'receita'),
-    somarLancamentos(mes, ano, 'despesa'),
+  // Igrejas Caebeiras: o Painel segue a mesma regra do relatório mensal geral
+  // (saldo inicial cadastrado + tipos "fora do geral" excluídos). Antes ele somava
+  // tudo desde o início e divergia do PDF e do banco.
+  const caeb = !!state.igrejaDados?.caebeira;
+  const fora = caeb ? tiposForaDoGeral() : new Set();
+  let receitas, despesas, saldoAnterior;
+  const [ultimos, saldoAnt] = await Promise.all([
     ultimosLancamentosDoMes(mes, ano, 8),
-    saldoAnteriorA(mes, ano),
+    caeb ? saldoAnteriorGeral(mes, ano) : saldoAnteriorA(mes, ano),
   ]);
+  saldoAnterior = saldoAnt;
+  if(fora.size){
+    // Mês inteiro (limitado a um mês) para poder descartar os tipos excluídos.
+    const doMes = await buscarLancamentos(mes, ano);
+    receitas = 0; despesas = 0;
+    doMes.forEach(l => {
+      if(fora.has(l.categoriaId)) return;
+      if(l.tipo === 'receita') receitas += (l.valor||0); else if(l.tipo === 'despesa') despesas += (l.valor||0);
+    });
+  } else {
+    [receitas, despesas] = await Promise.all([ somarLancamentos(mes, ano, 'receita'), somarLancamentos(mes, ano, 'despesa') ]);
+  }
   $('statReceitas').textContent = fmtBRL(receitas);
   $('statDespesas').textContent = fmtBRL(despesas);
   const saldoEl = $('statSaldo');
   saldoEl.textContent = fmtBRL(receitas-despesas);
   saldoEl.className = 'stat-value num ' + (receitas-despesas >= 0 ? 'green' : 'red');
+
+  // Saldo real no banco (por data), só quando há conta cadastrada e o mês é posterior ao saldo inicial.
+  const cardBanco = $('painelBancoCard');
+  const fimDoMes = iniProxMesISO(ano, mes);
+  const contasDoMes = (state.contas||[]).filter(c => c.dataSaldo && fimDoMes > c.dataSaldo);
+  let saldoBanco = null;
+  if(contasDoMes.length){
+    try{
+      const parciais = await Promise.all(contasDoMes.map(c => saldoDaContaAntesDe(c, fimDoMes, false)));
+      saldoBanco = parciais.reduce((x,y)=>x+y, 0);
+    } catch(e){ console.warn('Saldo bancário indisponível no Painel:', e.message); }
+  }
+  if(saldoBanco === null){ cardBanco.style.display = 'none'; }
+  else {
+    cardBanco.style.display = '';
+    const bEl = $('statSaldoBanco');
+    bEl.textContent = fmtBRL(saldoBanco);
+    bEl.className = 'stat-value num ' + (saldoBanco >= 0 ? 'green' : 'red');
+    const dif = saldoBanco - (saldoAnterior + receitas - despesas);
+    $('statSaldoBancoNota').textContent = Math.abs(dif) < 0.005
+      ? 'Bate com o saldo atual do relatório.'
+      : `Diferença para o saldo atual: ${fmtBRL(dif)} (lançamentos de outra competência ou fora do relatório).`;
+  }
 
   $('statSaldoAnterior').textContent = fmtBRL(saldoAnterior);
   const saldoAtualEl = $('statSaldoAtual');
@@ -677,6 +716,7 @@ async function renderPainel(){
       <div>
         <span class="tag ${l.tipo}">${l.tipo}</span>
         <span style="margin-left:8px;">${l.categoriaNome||''}${l.descricao ? ' · '+l.descricao : ''}</span>
+        <span style="font-size:11px; color:var(--text-dim);"> · ${(l.dataStr||'').split('-').reverse().join('/')}${l.conciliado ? ' ✓' : ''}</span>
       </div>
       <div class="num">${fmtBRL(l.valor)}</div>
     </div>`).join('') : `<div class="empty">Nenhum lançamento neste mês.</div>`;
