@@ -612,3 +612,7 @@ Só para igrejas Caebeiras.
 - **Efeito na CAEB:** o valor a ser coberto passa a usar o saldo **acumulado** (saldo anterior + resultado do mês); déficit anterior ainda não repassado aumenta o valor, sobra reduz. Card e PDF CAEB mostram resultado do mês, saldo anterior e saldo acumulado.
 
 Atualização: index.html, app.js, sw.js e README.md (cache `softplus-cache-v16`).
+
+## Saldo financeiro real no relatório mensal (versão 14)
+
+O balanço final do PDF mensal ganhou a linha **"Saldo financeiro real - {conta} (fim do mês)"**: o saldo que a conta tinha de fato ao fim do mês, calculado pela data real dos lançamentos (igual ao extrato do banco). Com mais de uma conta, aparece uma linha por conta e o total. Só aparece se a igreja cadastrou contas e o mês é posterior à data do saldo inicial. A linha de destaque continua sendo "Saldo para o próximo mês" (por competência); a diferença entre as duas linhas são lançamentos de outra competência ou tipos fora do relatório geral. Atualização: index.html, app.js, sw.js e README.md (cache `softplus-cache-v17`).

@@ -3313,7 +3313,7 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
     y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
     y = faixaTotal(pdf, y, 'TOTAL DE DESPESAS (R$)', totalSaidas, [248,215,215]);
 
-    y = garantirEspaco(pdf, y, 55, tituloPeriodo);
+    y = garantirEspaco(pdf, y, 65, tituloPeriodo);
     y = faixaTitulo(pdf, y, 'BALANÇO FINAL');
     const percentual = totalEntradas > 0 ? ((totalSaidas/totalEntradas)*100).toFixed(2)+'%' : '—';
     const linhasBalanco = [
@@ -3324,10 +3324,22 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
       ['Saldo anterior', fmtBRL(saldoAnterior)],
       ['Saldo para o próximo mês', fmtBRL(saldoAnterior + saldoMes)],
     ];
+    const idxDestaque = linhasBalanco.length - 1;
+    // Saldo financeiro REAL: o que a(s) conta(s) tinham de fato ao fim do mês
+    // (por data do lançamento, como o extrato do banco). Difere do saldo acima
+    // quando há lançamentos de outra competência ou tipos fora deste relatório.
+    // Contas só aparecem se a igreja as cadastrou e o mês é posterior ao saldo inicial.
+    const fimDoMes = iniProxMesISO(ano, mes);
+    const contasDoMes = ordenarPorNome(state.contas).filter(c => c.dataSaldo && fimDoMes > c.dataSaldo);
+    if(contasDoMes.length){
+      const saldosContas = await Promise.all(contasDoMes.map(c => saldoDaContaAntesDe(c, fimDoMes, false)));
+      contasDoMes.forEach((c,i) => linhasBalanco.push([`Saldo financeiro real - ${c.nome} (fim do mês)`, fmtBRL(saldosContas[i])]));
+      if(contasDoMes.length > 1) linhasBalanco.push(['Saldo financeiro real - total das contas', fmtBRL(saldosContas.reduce((s,v)=>s+v,0))]);
+    }
     pdf.autoTable({
       startY:y, body: linhasBalanco, theme:'grid', styles:{fontSize:8.5, cellPadding:2}, margin:{bottom:12},
       columnStyles:{0:{fontStyle:'bold'}, 1:{halign:'right'}},
-      didParseCell: (data)=>{ if(data.row.index === linhasBalanco.length-1) data.row.cells[0].styles.fillColor = data.row.cells[1].styles.fillColor = [210,235,215]; }
+      didParseCell: (data)=>{ if(data.row.index === idxDestaque) data.row.cells[0].styles.fillColor = data.row.cells[1].styles.fillColor = [210,235,215]; }
     });
     y = pdf.lastAutoTable.finalY + 10;
     y = garantirEspaco(pdf, y, 9, tituloPeriodo);
