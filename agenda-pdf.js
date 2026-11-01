@@ -221,6 +221,10 @@ export function desenharAgendaPdf(JsPDF, dados){
     else {
       celula(xAtiv, y, COL.ativ, h);
       if(l.tipo === 'texto'){ celula(xF[0], y, xFim - xF[0], h); }
+      else if(l.tipo === 'culto' && !ehPadrao(l) && m.celulasF.length){
+        // Funções personalizadas: as células seguem a divisão real (antes eram sempre 3 e o texto cruzava as linhas).
+        m.celulasF.forEach(c => celula(c.x, y, c.w, h));
+      }
       else { [0,1,2].forEach(i => celula(xF[i], y, COL.f[i], h)); }
     }
     // horário
