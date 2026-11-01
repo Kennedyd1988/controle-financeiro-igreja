@@ -69,12 +69,15 @@ export function desenharAgendaPdf(JsPDF, dados){
     if(!igreja.marcaDagua) return;
     try{
       const { w, h } = dimensoes(igreja.marcaDagua);
-      let dw = 190, dh = dw * h / w;
-      if(dh > 135){ dh = 135; dw = dh * w / h; }
+      // Tamanhos: a proporção da imagem é sempre mantida; "inteira" centraliza na página.
+      const T = { pequena:[120,85], media:[190,135], grande:[210,175], inteira:[210,297] }[igreja.marcaTamanho] || [190,135];
+      let dw = T[0], dh = dw * h / w;
+      if(dh > T[1]){ dh = T[1]; dw = dh * w / h; }
+      const yMarca = igreja.marcaTamanho === 'inteira' ? (297 - dh) / 2 : 268 - dh;
       const op = Math.min(1, Math.max(0.03, (igreja.marcaOpacidade ?? 15) / 100));
       pdf.saveGraphicsState();
       pdf.setGState(new pdf.GState({ opacity: op }));
-      pdf.addImage(igreja.marcaDagua, formatoImg(igreja.marcaDagua), 105 - dw/2, 268 - dh, dw, dh);
+      pdf.addImage(igreja.marcaDagua, formatoImg(igreja.marcaDagua), 105 - dw/2, yMarca, dw, dh);
       pdf.restoreGraphicsState();
     } catch(e){ /* segue sem marca d'água */ }
   }
