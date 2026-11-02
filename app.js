@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
 
 import { iniciarAgendas, renderAgendas, resetarAgendas, renderPainelAgendas, FUNCOES_PADRAO } from "./agendas.js?v=16";
-import { pdfMensal, pdfCaeb, pdfAnual, pdfFiel, pdfExtrato, pdfCampanha } from "./relatorios-pdf.js?v=21";
+import { pdfMensal, pdfCaeb, pdfAnual, pdfFiel, pdfExtrato, pdfCampanha } from "./relatorios-pdf.js?v=22";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -649,6 +649,7 @@ async function onIgrejaChange(){
     const btn = document.querySelector(`.nav-btn[data-view="${a.id}"]`);
     if(btn) btn.style.display = temAcesso(a.id) ? 'flex' : 'none';
   });
+  atualizarGruposMenu();   // depois de todas as permissões, para não deixar título de grupo vazio
   // reseta paginação/busca de fiéis, senão mostraria dados da igreja anterior
   state.fieisPagina = []; state.fieisCursor = null; state.fieisTemMais = false; state.fieisBuscaAtual = '';
   if($('fieisBusca')) $('fieisBusca').value = '';
@@ -940,6 +941,7 @@ async function renderPainel(){
   // (saldo inicial cadastrado + tipos "fora do geral" excluídos). Antes ele somava
   // tudo desde o início e divergia do PDF e do banco.
   const caeb = !!state.igrejaDados?.caebeira;
+  $('btnPainelPdfCaeb').style.display = caeb ? '' : 'none';
   const fora = caeb ? tiposForaDoGeral() : new Set();
   let receitas, despesas, saldoAnterior;
   const [ultimos, saldoAnt] = await Promise.all([
@@ -3503,11 +3505,11 @@ function ordenarPorFielNome(lista){
     return na.localeCompare(nb, 'pt-BR');
   });
 }
-$('btnPdfMensal').addEventListener('click', async ()=>{
-  const btn = $('btnPdfMensal');
+// Funções separadas dos botões para que a aba Relatórios e o Painel gerem o
+// mesmo PDF, sem duplicar a coleta de dados.
+async function gerarPdfMensal(btn, mes, ano){
   btn.disabled = true; toast('Gerando PDF...');
   try{
-    const mes = parseInt($('relMes').value), ano = parseInt($('relAno').value);
     // Igreja Caebeira: tipos desmarcados em "Entra no relatório geral" ficam de fora
     // deste PDF (e do saldo anterior dele). Nas demais igrejas nada muda.
     const caebeira = !!state.igrejaDados?.caebeira;
@@ -3543,13 +3545,12 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
   } finally {
     btn.disabled = false;
   }
-});
+}
+$('btnPdfMensal').addEventListener('click', () => gerarPdfMensal($('btnPdfMensal'), parseInt($('relMes').value), parseInt($('relAno').value)));
 
-$('btnPdfCaeb').addEventListener('click', async ()=>{
-  const btn = $('btnPdfCaeb');
+async function gerarPdfCaebMes(btn, mes, ano){
   btn.disabled = true; toast('Gerando PDF...');
   try{
-    const mes = parseInt($('relMes').value), ano = parseInt($('relAno').value);
     const lancs = await buscarLancamentos(mes, ano);
     const c = calcularCaeb(lancs, await saldoAnteriorCaeb(mes, ano));
     const { jsPDF } = window.jspdf;
@@ -3566,6 +3567,16 @@ $('btnPdfCaeb').addEventListener('click', async ()=>{
     console.error('Erro ao gerar PDF CAEB:', e);
     toast('Erro ao gerar o PDF: ' + e.message, true);
   } finally { btn.disabled = false; }
+}
+$('btnPdfCaeb').addEventListener('click', () => gerarPdfCaebMes($('btnPdfCaeb'), parseInt($('relMes').value), parseInt($('relAno').value)));
+
+// Cartão "Relatório do mês" do Painel: usa o mês/ano já escolhidos no topo.
+$('btnPainelPdfMensal').addEventListener('click', () => gerarPdfMensal($('btnPainelPdfMensal'), parseInt($('painelMes').value), parseInt($('painelAno').value)));
+$('btnPainelPdfCaeb').addEventListener('click', () => gerarPdfCaebMes($('btnPainelPdfCaeb'), parseInt($('painelMes').value), parseInt($('painelAno').value)));
+$('btnPainelVerRelatorios').addEventListener('click', () => {
+  // Leva o mês/ano do Painel para a aba Relatórios, para a pessoa não escolher de novo.
+  $('relMes').value = $('painelMes').value; $('relAno').value = $('painelAno').value;
+  document.querySelector('.nav-btn[data-view="relatorios"]').click();
 });
 
 $('btnPdfAnual').addEventListener('click', async ()=>{
@@ -3764,3 +3775,17 @@ iniciarAgendas({
   db, state, toast, comCarregando, temAcesso, podeEditarAba, normalizarTexto, ordenarPorNome,
   dataLocalISO, validarObrigatorios, switchView,
 });
+
+
+// Esconde o título de um grupo do menu quando todos os itens dele estão ocultos
+// (ex.: pessoa sem permissão de administrador não vê itens de cadastros).
+function atualizarGruposMenu(){
+  document.querySelectorAll('#sidebar .nav-grupo').forEach(t => {
+    let el = t.nextElementSibling, algum = false;
+    while(el && !el.classList.contains('nav-grupo') && !el.classList.contains('sidebar-foot')){
+      if(el.style.display !== 'none') algum = true;
+      el = el.nextElementSibling;
+    }
+    t.style.display = algum ? '' : 'none';
+  });
+}
