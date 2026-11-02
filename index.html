@@ -422,7 +422,7 @@
         </div>
       </div>
       <button class="btn btn-sm" id="btnInstalarLogin" style="margin-top:16px;">⬇️ Instalar app no celular</button>
-      <div class="versao-app" style="margin-top:10px; font-size:11px; color:var(--muted,#8a94a6);">Versão 16</div>
+      <div class="versao-app" style="margin-top:10px; font-size:11px; color:var(--muted,#8a94a6);">Versão 17</div>
     </div>
   </div>
 
@@ -466,11 +466,11 @@
       <button class="nav-btn" data-view="igreja"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M10 4h4"/><path d="M4 21V10l8-6 8 6v11"/><path d="M9 21v-6h6v6"/></svg>Dados da Igreja</button>
       <button class="nav-btn" data-view="usuarios" id="navUsuarios" style="display:none;"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 11 2 2 4-4"/></svg>Usuários</button>
       <button class="nav-btn" data-view="importar" id="navImportar" style="display:none;"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>Importar dados</button>
-      <button class="nav-btn" data-view="novaIgreja"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Nova Igreja</button>
+      <button class="nav-btn" id="navNovaIgreja" data-view="novaIgreja"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Nova Igreja</button>
 
       <div class="sidebar-foot">
         <button class="btn btn-sm" id="btnInstalarSidebar" style="width:100%; margin-bottom:10px;">⬇️ Instalar app</button>
-        <div class="versao-app" style="text-align:center; font-size:11px; opacity:.7; margin-bottom:8px;">Versão 16</div>
+        <div class="versao-app" style="text-align:center; font-size:11px; opacity:.7; margin-bottom:8px;">Versão 17</div>
         <div class="user-chip">
           <div class="user-avatar" id="userAvatar">—</div>
           <div class="user-chip-info">
@@ -1009,6 +1009,17 @@
           </div>
           <button class="btn btn-primary" id="btnSalvarIgreja">Salvar alterações</button>
         </div>
+
+        <!-- Exclusão: só administrador, e só se a igreja não tiver nenhum lançamento -->
+        <div class="card" id="igExcluirCard" style="display:none; margin-top:16px; border-color:var(--red-dim);">
+          <div style="font-weight:600; margin-bottom:6px;">Excluir esta igreja</div>
+          <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px;">
+            Só é possível se a igreja não tiver <b>nenhum lançamento</b> (nem de campanhas).
+            Ao excluir, somem também os fiéis, categorias, agendas, usuários e demais cadastros dela.
+            Essa ação não pode ser desfeita.
+          </p>
+          <button class="btn btn-danger" id="btnExcluirIgreja">Excluir igreja</button>
+        </div>
       </section>
 
       <!-- USUÁRIOS -->
@@ -1068,9 +1079,22 @@
             <div class="view-desc">Você se torna administrador dela automaticamente</div>
           </div>
         </div>
-        <div class="card" style="max-width:420px;">
+        <div class="card" style="max-width:420px;" id="novaIgrejaForm">
           <div class="field"><label>Nome da igreja<span class="req">*</span></label><input id="novaIgrejaNome" placeholder="Ex: Igreja de Cristo em..." required></div>
           <button class="btn btn-primary" id="btnCriarIgreja">Criar igreja</button>
+        </div>
+        <!-- Quem não é administrador não cria igreja: só entra por convite -->
+        <div class="card" style="max-width:480px; display:none;" id="novaIgrejaBloqueada">
+          <p style="margin-bottom:10px;"><b>Você ainda não tem acesso a nenhuma igreja.</b></p>
+          <p style="font-size:13px; color:var(--text-dim); margin-bottom:14px;">
+            Apenas administradores criam igrejas. Peça ao administrador da sua igreja para cadastrar
+            o seu e-mail em <b>Usuários</b>. Se ele já fez isso, toque em <b>Verificar convites</b>
+            (ou saia e entre de novo) para o acesso ser liberado.
+          </p>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-primary" id="btnVerificarConvites">Verificar convites</button>
+            <button class="btn" id="btnSairSemIgreja">Sair</button>
+          </div>
         </div>
       </section>
 
@@ -1153,6 +1177,22 @@
       <div class="modal-actions">
         <button class="btn" id="btnCancelarFiel">Cancelar</button>
         <button class="btn btn-primary" id="btnSalvarFiel">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: excluir igreja (exige digitar o nome) -->
+  <div class="modal-backdrop" id="modalExcluirIgreja">
+    <div class="modal">
+      <h3>Excluir igreja</h3>
+      <p style="font-size:13px; margin-bottom:10px;" id="excIgrejaResumo"></p>
+      <div class="field">
+        <label>Para confirmar, digite o nome da igreja<span class="req">*</span></label>
+        <input type="text" id="excIgrejaNomeConf" autocomplete="off">
+      </div>
+      <div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end;">
+        <button class="btn" id="btnCancelarExcIgreja">Cancelar</button>
+        <button class="btn btn-danger" id="btnConfirmarExcIgreja">Excluir definitivamente</button>
       </div>
     </div>
   </div>
@@ -1352,6 +1392,6 @@
     <button id="btnFecharInstalarBanner" aria-label="Fechar">×</button>
   </div>
 
-  <script type="module" src="app.js?v=16"></script>
+  <script type="module" src="app.js?v=17"></script>
 </body>
 </html>

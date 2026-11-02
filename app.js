@@ -52,6 +52,8 @@ const state = {
   perfil: null,
   igrejas: [],          // [{id, nome, papel, abas}]
   igrejaAtualId: null,
+  podeCriarIgreja: false, // só quem é administrador de alguma igreja cria igrejas (ver verificarPodeCriarIgreja)
+  origemAdminId: null,    // uma igreja onde o usuário é admin; a regra do Firestore confere
   igrejaDados: {},       // dados completos da igreja atual (inclui logo)
   categoriasReceita: [],
   categoriasDespesa: [],
@@ -417,7 +419,51 @@ async function buscarListaIgrejasDoUsuario(user){
   sel.innerHTML = state.igrejas.length
     ? state.igrejas.map(i => `<option value="${i.id}">${i.nome}</option>`).join('')
     : `<option>Nenhuma igreja ainda</option>`;
+  await verificarPodeCriarIgreja(user);
 }
+
+// Só administradores criam igrejas: quem é admin de ALGUMA igreja neste
+// momento. Nada é gravado à parte — a regra do Firestore confere o papel
+// atual na igreja informada em "origemAdminId", então rebaixar alguém tira
+// o direito na hora. A interface só esconde o botão; quem barra é a regra.
+async function verificarPodeCriarIgreja(user){
+  const adminEm = state.igrejas.find(i => i.papel === 'admin');
+  state.origemAdminId = adminEm ? adminEm.id : null;
+  const pode = !!adminEm;
+  state.podeCriarIgreja = pode;
+  const nav = $('navNovaIgreja');
+  if(nav) nav.style.display = pode ? 'flex' : 'none';
+}
+
+// Tela "Nova igreja": formulário para admin; aviso + "Verificar convites" para os demais.
+function renderNovaIgreja(){
+  const pode = state.podeCriarIgreja;
+  $('novaIgrejaForm').style.display = pode ? 'block' : 'none';
+  $('novaIgrejaBloqueada').style.display = pode ? 'none' : 'block';
+  const desc = document.querySelector('#view-novaIgreja .view-desc');
+  const tit = document.querySelector('#view-novaIgreja .view-title');
+  if(tit) tit.textContent = pode ? 'Cadastrar nova igreja' : 'Aguardando acesso';
+  if(desc) desc.textContent = pode ? 'Você se torna administrador dela automaticamente' : 'Peça ao administrador para liberar o seu e-mail';
+}
+
+// Procura convites agora, sem precisar sair e entrar (o resgate normal só
+// roda no login — por isso quem já estava logado ficava preso nesta tela).
+$('btnVerificarConvites').addEventListener('click', async ()=>{
+  const btn = $('btnVerificarConvites');
+  btn.disabled = true;
+  try{
+    await resgatarConvitesPendentes(state.user);
+    await buscarListaIgrejasDoUsuario(state.user);
+    if(state.igrejas.length === 0){ toast('Nenhum convite encontrado ainda.', true); return; }
+    state.igrejaAtualId = state.igrejas[0].id;
+    $('igrejaSwitch').value = state.igrejaAtualId;
+    await onIgrejaChange();
+    switchView('painel');
+    toast('Acesso liberado!');
+  } catch(e){ toast('Erro ao verificar convites: ' + e.message, true); }
+  finally { btn.disabled = false; }
+});
+$('btnSairSemIgreja').addEventListener('click', ()=> signOut(auth));
 
 // Recarrega a lista e mantém a igreja atual selecionada — usado durante o
 // uso normal do app (depois de criar igreja, editar nome, importar, etc.),
@@ -600,7 +646,7 @@ function refreshView(name){
   const map = {
     painel: renderPainel, lancamentos: renderLancamentos, fieis: renderFieis,
     cadastros: renderCadastros, relatorios: renderRelatorios, competencias: renderCompetencias,
-    igreja: renderIgreja, usuarios: renderUsuarios, novaIgreja: ()=>{},
+    igreja: renderIgreja, usuarios: renderUsuarios, novaIgreja: renderNovaIgreja,
     importar: renderImportar, campanhas: renderCampanhas, financeiro: renderFinanceiro, agendas: renderAgendas,
   };
   if(map[name]) comCarregando(Promise.resolve(map[name]()));
@@ -608,17 +654,24 @@ function refreshView(name){
 
 // ---------- NOVA IGREJA (bootstrap) ----------
 $('btnCriarIgreja').addEventListener('click', async ()=>{
+  if(!state.podeCriarIgreja){ toast('Apenas administradores podem criar igrejas.', true); return; }
   if(!validarObrigatorios([{id:'novaIgrejaNome', nome:'Nome da igreja'}])) return;
   const nome = $('novaIgrejaNome').value.trim();
+  const btnCriar = $('btnCriarIgreja');
+  btnCriar.disabled = true;   // evita duas igrejas por duplo toque
   try{
+    // bootstrapPendente: permite ao criador gravar o PRÓPRIO vínculo de admin
+    // (regra do Firestore) uma única vez; é desligado logo depois.
     const igrejaRef = await addDoc(collection(db, 'igrejas'), {
       nome, pastor:'', tesoureiro:'', endereco:'', bairro:'', cidade:'', estado:'', cep:'',
-      email:'', instagram:'', cnpj:'', logo:null, criadoEm: serverTimestamp()
+      email:'', instagram:'', cnpj:'', logo:null, criadoEm: serverTimestamp(),
+      criadoPor: state.user.uid, origemAdminId: state.origemAdminId, bootstrapPendente: true
     });
     await setDoc(doc(db, 'igrejas', igrejaRef.id, 'usuarios', state.user.uid), {
       uid: state.user.uid, nome: state.perfil.nome, email: state.user.email,
       papel: 'admin', abasPermitidas: TODAS_ABAS, criadoEm: serverTimestamp()
     });
+    await updateDoc(doc(db, 'igrejas', igrejaRef.id), { bootstrapPendente: false });
     await setDoc(doc(db, 'membrosIndice', `${igrejaRef.id}_${state.user.uid}`), {
       uid: state.user.uid, igrejaId: igrejaRef.id, igrejaNome: nome,
       papel: 'admin', abas: TODAS_ABAS, nome: state.perfil.nome, email: state.user.email
@@ -636,6 +689,116 @@ $('btnCriarIgreja').addEventListener('click', async ()=>{
     await onIgrejaChange();
     switchView('painel');
   } catch(e){ toast('Erro ao criar igreja: '+e.message, true); }
+  finally { btnCriar.disabled = false; }
+});
+
+// ---------- EXCLUIR IGREJA ----------
+// Subcoleções simples (sem filhos) apagadas em lotes antes da igreja em si —
+// o Firestore NÃO apaga subcoleções junto com o documento pai, e sem esta
+// limpeza ficariam dados órfãos (e pagos) para sempre.
+const SUBCOLECOES_IGREJA = [
+  'membros','grupos','cargos','categoriasReceita','categoriasDespesa','contas','competencias',
+  'cultosPadrao','agendas','participacoes','lembretes','mensagens','configAgenda'
+];
+
+// Apaga todos os docs de uma coleção, 400 por lote.
+async function apagarColecaoEmLotes(caminho){
+  for(;;){
+    const snap = await getDocs(query(collection(db, ...caminho), limit(400)));
+    if(snap.empty) return;
+    const batch = writeBatch(db);
+    snap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+    if(snap.size < 400) return;
+  }
+}
+
+// Regra de negócio: igreja com QUALQUER lançamento (geral ou de campanha) não
+// pode ser excluída. Retorna null se está livre, ou o motivo do bloqueio.
+async function motivoBloqueioExclusao(igrejaId){
+  const lanc = await getDocs(query(collection(db,'igrejas',igrejaId,'lancamentos'), limit(1)));
+  if(!lanc.empty) return 'Esta igreja possui lançamentos. Só é possível excluir uma igreja sem nenhum lançamento.';
+  const camps = await getDocs(collection(db,'igrejas',igrejaId,'campanhas'));
+  for(const c of camps.docs){
+    const l = await getDocs(query(collection(db,'igrejas',igrejaId,'campanhas',c.id,'lancamentos'), limit(1)));
+    if(!l.empty) return `A campanha "${c.data().nome || c.id}" possui lançamentos. Só é possível excluir uma igreja sem nenhum lançamento.`;
+  }
+  return null;
+}
+
+$('btnExcluirIgreja').addEventListener('click', async ()=>{
+  if(!isAdmin()){ toast('Apenas administradores podem excluir a igreja.', true); return; }
+  // Sem igreja onde seja admin, a pessoa perderia o direito de criar outra
+  // (e o de excluir): por isso a última igreja de um administrador não sai.
+  if(state.igrejas.filter(i => i.papel === 'admin').length <= 1){
+    toast('Esta é a sua única igreja como administrador. Crie outra antes de excluir esta.', true); return;
+  }
+  const btn = $('btnExcluirIgreja');
+  btn.disabled = true; btn.textContent = 'Verificando...';
+  try{
+    const motivo = await motivoBloqueioExclusao(state.igrejaAtualId);
+    if(motivo){ toast(motivo, true); return; }
+    const usrs = await getDocs(collection(db,'igrejas',state.igrejaAtualId,'usuarios'));
+    const outros = usrs.size - 1;
+    $('excIgrejaResumo').innerHTML = `Você vai excluir <b>${igrejaAtual()?.nome || ''}</b>, que não tem nenhum lançamento.` +
+      (outros > 0 ? ` <b>${outros}</b> outro(s) usuário(s) perderão o acesso.` : '') +
+      ` Fiéis, categorias, agendas e demais cadastros serão apagados. Não há como desfazer.`;
+    $('excIgrejaNomeConf').value = ''; $('excIgrejaNomeConf').classList.remove('input-error');
+    $('modalExcluirIgreja').classList.add('active');
+  } catch(e){ toast('Erro ao verificar a igreja: ' + e.message, true); }
+  finally { btn.disabled = false; btn.textContent = 'Excluir igreja'; }
+});
+$('btnCancelarExcIgreja').addEventListener('click', ()=> $('modalExcluirIgreja').classList.remove('active'));
+
+$('btnConfirmarExcIgreja').addEventListener('click', async ()=>{
+  const id = state.igrejaAtualId;
+  const nome = (igrejaAtual()?.nome || '').trim();
+  if($('excIgrejaNomeConf').value.trim() !== nome){
+    $('excIgrejaNomeConf').classList.add('input-error');
+    toast('O nome digitado não confere com o da igreja.', true); return;
+  }
+  if(!isAdmin()){ toast('Apenas administradores podem excluir a igreja.', true); return; }
+  const btn = $('btnConfirmarExcIgreja');
+  btn.disabled = true; btn.textContent = 'Excluindo...';
+  try{
+    // Reconfere na hora: um lançamento pode ter entrado desde que o modal abriu.
+    const motivo = await motivoBloqueioExclusao(id);
+    if(motivo){ toast(motivo, true); $('modalExcluirIgreja').classList.remove('active'); return; }
+
+    // 1) cadastros e agendas
+    for(const sub of SUBCOLECOES_IGREJA) await apagarColecaoEmLotes(['igrejas', id, sub]);
+    // campanhas (sem lançamentos, garantido acima)
+    await apagarColecaoEmLotes(['igrejas', id, 'campanhas']);
+    // 2) convites pendentes + índice. O índice é apagado doc a doc com
+    // try/catch: apagar doc inexistente é negado pela regra e derrubaria o lote.
+    const convs = await getDocs(collection(db,'igrejas',id,'convites'));
+    for(const c of convs.docs){
+      try{ await deleteDoc(doc(db,'convitesIndice', `${id}_${c.id}`)); }catch(e){}
+      await deleteDoc(c.ref);
+    }
+    // 3) vínculos dos OUTROS usuários (enquanto você ainda é admin); o seu fica por último
+    const usrs = await getDocs(collection(db,'igrejas',id,'usuarios'));
+    for(const u of usrs.docs){
+      if(u.id === state.user.uid) continue;
+      try{ await deleteDoc(doc(db,'membrosIndice', `${id}_${u.id}`)); }catch(e){}
+      await deleteDoc(u.ref);
+    }
+    // 4) a igreja, e só então o seu próprio vínculo
+    await deleteDoc(doc(db,'igrejas',id));
+    try{ await deleteDoc(doc(db,'membrosIndice', `${id}_${state.user.uid}`)); }catch(e){}
+    try{ await deleteDoc(doc(db,'igrejas',id,'usuarios', state.user.uid)); }catch(e){}
+
+    $('modalExcluirIgreja').classList.remove('active');
+    toast('Igreja excluída.');
+    state.igrejaAtualId = null;
+    await carregarIgrejasDoUsuario(state.user);
+    if(state.igrejas.length) switchView('painel');
+  } catch(e){
+    // Exclusão é idempotente: se parou no meio, é só tentar de novo.
+    toast('Erro ao excluir: ' + e.message + ' — tente novamente.', true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Excluir definitivamente';
+  }
 });
 
 // ---------- PAINEL ----------
@@ -2597,6 +2760,7 @@ async function renderIgreja(){
   const editavel = isAdmin();
   document.querySelectorAll('#view-igreja input').forEach(i => i.disabled = !editavel);
   $('btnSalvarIgreja').style.display = editavel ? 'inline-flex' : 'none';
+  $('igExcluirCard').style.display = editavel ? 'block' : 'none';
   $('btnRemoverLogo').style.display = editavel ? 'inline-flex' : 'none';
   $('btnRemoverLogoTopo').style.display = editavel ? 'inline-flex' : 'none';
   $('btnRemoverMarca').style.display = editavel ? 'inline-flex' : 'none';

@@ -81,13 +81,15 @@ service cloud.firestore {
     // subcoleção, e não usamos collectionGroup) para permitir uma consulta
     // simples e segura por uid, sem depender de checagem cruzada de outro
     // documento — o Firestore não lida bem com isso em buscas amplas.
+    // Criar o próprio índice só com convite válido; quem acabou de criar a
+    // igreja já é admin (o vínculo em "usuarios" é gravado antes), e o admin
+    // também cria o índice de quem ele cadastra. A antiga brecha
+    // "!exists(usuarios)" saiu: com ela qualquer logado se anunciava como
+    // membro de qualquer igreja.
     match /membrosIndice/{docId} {
       allow read: if logado() && resource.data.uid == request.auth.uid;
       allow create: if logado() && request.auth.uid == request.resource.data.uid &&
-        (
-          exists(/databases/$(database)/documents/igrejas/$(request.resource.data.igrejaId)/convites/$(request.auth.token.email)) ||
-          !exists(/databases/$(database)/documents/igrejas/$(request.resource.data.igrejaId)/usuarios/$(request.auth.uid))
-        )
+        exists(/databases/$(database)/documents/igrejas/$(request.resource.data.igrejaId)/convites/$(request.auth.token.email))
         || isAdmin(request.resource.data.igrejaId);
       allow update: if isAdmin(resource.data.igrejaId) ||
         (logado() && resource.data.uid == request.auth.uid &&
@@ -102,13 +104,28 @@ service cloud.firestore {
       allow delete: if logado() && (resource.data.email == request.auth.token.email || isAdmin(resource.data.igrejaId));
     }
 
+    // Igreja recém-criada que ainda não tem o primeiro admin vinculado.
+    // O app liga a marca "bootstrapPendente" e a desliga logo após criar o
+    // vínculo do criador — assim o criador não consegue se re-adicionar como
+    // admin depois que alguém o removeu.
+    function bootstrapDoCriador(igrejaId) {
+      return logado() &&
+        get(/databases/$(database)/documents/igrejas/$(igrejaId)).data.get('criadoPor', '') == request.auth.uid &&
+        get(/databases/$(database)/documents/igrejas/$(igrejaId)).data.get('bootstrapPendente', false) == true;
+    }
+
     match /igrejas/{igrejaId} {
       allow read: if ehMembro(igrejaId);
-      // Qualquer usuário logado pode criar uma igreja nova (bootstrap).
-      // Logo em seguida o app cria o vínculo de admin para ele mesmo.
-      allow create: if logado();
+      // Criar igreja exige ser administrador AGORA de alguma igreja, que o
+      // app informa em "origemAdminId". Nada fica guardado: ao ser rebaixado
+      // (ou removido) o usuário perde este direito automaticamente.
+      allow create: if logado() &&
+        request.resource.data.criadoPor == request.auth.uid &&
+        isAdmin(request.resource.data.origemAdminId);
       allow update: if isAdmin(igrejaId);
-      allow delete: if false;
+      // Exclusão só por admin. A regra de "sem lançamentos" é checada pelo
+      // app antes de apagar; a regra aqui garante que só admin chega lá.
+      allow delete: if isAdmin(igrejaId);
 
       match /usuarios/{uid} {
         allow read: if ehMembro(igrejaId);
@@ -116,7 +133,8 @@ service cloud.firestore {
         // recém-criada por ele mesmo, ou (b) existe um convite válido para o
         // e-mail dele. Um admin também pode adicionar outros diretamente.
         allow create: if logado() && request.auth.uid == uid &&
-          (conviteValido(igrejaId) || !exists(/databases/$(database)/documents/igrejas/$(igrejaId)/usuarios/$(request.auth.uid)))
+          (conviteValido(igrejaId) ||
+           (bootstrapDoCriador(igrejaId) && !exists(/databases/$(database)/documents/igrejas/$(igrejaId)/usuarios/$(request.auth.uid))))
           || isAdmin(igrejaId);
         allow update: if isAdmin(igrejaId) ||
           (logado() && request.auth.uid == uid &&
