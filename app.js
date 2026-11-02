@@ -362,11 +362,16 @@ async function carregarPerfil(user){
 // Verifica se existe convite (em qualquer igreja) para o e-mail do usuário logado,
 // consultando o índice "convitesIndice" (coleção de nível raiz — evitamos
 // collectionGroup, que o Firestore trata de forma mais restrita nas regras).
+// Retorna os nomes das igrejas onde o acesso foi liberado agora. Cada convite
+// tem seu próprio try/catch: antes, um convite com problema derrubava o laço
+// inteiro e os demais ficavam pendentes sem nenhum aviso.
 async function resgatarConvitesPendentes(user){
+  const liberadas = [];
   try{
     const q = query(collection(db, 'convitesIndice'), where('email', '==', user.email));
     const snaps = await getDocs(q);
     for(const convDoc of snaps.docs){
+     try{
       const dados = convDoc.data();
       const igrejaId = dados.igrejaId;
       const abas = dados.abas || TODAS_ABAS;
@@ -384,12 +389,42 @@ async function resgatarConvitesPendentes(user){
           uid: user.uid, igrejaId, igrejaNome: dados.igrejaNome || '',
           papel: dados.papel, abas, nome: state.perfil.nome, email: user.email
         });
+        liberadas.push(dados.igrejaNome || 'nova igreja');
       }
       await deleteDoc(doc(db, 'igrejas', igrejaId, 'convites', user.email));
       await deleteDoc(convDoc.ref);
+     } catch(e){ console.warn('Convite não resgatado:', e.message); }
     }
   } catch(e){ console.warn('Sem convites pendentes:', e.message); }
+  return liberadas;
 }
+
+// O resgate normal só roda no login; quem já estava com o app aberto (ou
+// instalado, sessão eterna) nunca via a igreja nova. Por isso também roda ao
+// voltar para o app (no máximo a cada 30s) e pelo botão "Atualizar acessos".
+let convitesVerificando = false, convitesUltimaVerificacao = 0;
+async function atualizarConvitesAgora(manual){
+  if(!state.user || convitesVerificando) return;
+  convitesVerificando = true;
+  convitesUltimaVerificacao = Date.now();
+  try{
+    const novas = await resgatarConvitesPendentes(state.user);
+    if(novas.length){
+      await buscarListaIgrejasDoUsuario(state.user);
+      if(state.igrejaAtualId) $('igrejaSwitch').value = state.igrejaAtualId;
+      toast('Novo acesso liberado: ' + novas.join(', ') + '. Escolha no seletor de igreja.');
+    } else if(manual){
+      toast('Nenhum convite novo.');
+    }
+  } catch(e){
+    if(manual) toast('Erro ao verificar convites: ' + e.message, true);
+  } finally { convitesVerificando = false; }
+}
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible' && state.igrejaAtualId && Date.now() - convitesUltimaVerificacao > 30000){
+    atualizarConvitesAgora(false);
+  }
+});
 
 // Busca em quais igrejas o usuário está, consultando o índice "membrosIndice"
 // (coleção de nível raiz, uma consulta simples e direta por uid).
@@ -464,6 +499,12 @@ $('btnVerificarConvites').addEventListener('click', async ()=>{
   finally { btn.disabled = false; }
 });
 $('btnSairSemIgreja').addEventListener('click', ()=> signOut(auth));
+$('btnAtualizarConvites').addEventListener('click', async ()=>{
+  const b = $('btnAtualizarConvites');
+  b.disabled = true;
+  await atualizarConvitesAgora(true);
+  b.disabled = false;
+});
 
 // Recarrega a lista e mantém a igreja atual selecionada — usado durante o
 // uso normal do app (depois de criar igreja, editar nome, importar, etc.),
