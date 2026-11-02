@@ -12,6 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
 
 import { iniciarAgendas, renderAgendas, resetarAgendas, renderPainelAgendas, FUNCOES_PADRAO } from "./agendas.js?v=16";
+import { pdfMensal, pdfCaeb, pdfAnual, pdfFiel, pdfExtrato, pdfCampanha } from "./relatorios-pdf.js?v=21";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -1768,20 +1769,12 @@ async function gerarPdfExtrato(){
   try{
     const mes = parseInt($('finExtMes').value), ano = parseInt($('finExtAno').value);
     const ex = await montarExtrato(conta, mes, ano);
-    const { jsPDF } = window.jspdf; const pdf = new jsPDF();
-    const titulo = `EXTRATO — ${conta.nome.toUpperCase()} — ${MESES[mes-1].toUpperCase()}/${ano}`;
-    let y = cabecalhoRelatorioPdf(pdf, titulo);
-    const corpo = [
-      ['', 'SALDO ANTERIOR', '', '', fmtBRL(ex.anterior)],
-      ...ex.linhas.map(l => [formatarDataBR(l.dataStr), historicoDoMov(l), l.contaEntrada ? fmtBRL(l.contaEntrada) : '', l.contaSaida ? fmtBRL(l.contaSaida) : '', fmtBRL(l.saldo)]),
-      ['', 'SALDO FINAL', fmtBRL(ex.entradas), fmtBRL(ex.saidas), fmtBRL(ex.final)],
-    ];
-    pdf.autoTable({ startY:y, head:[['Data','Histórico','Entrada','Saída','Saldo']], body: corpo, theme:'grid',
-      styles:{fontSize:7.5, cellPadding:1.4}, headStyles:{fillColor:[13,79,196]}, margin:{left:14,right:14,bottom:12},
-      columnStyles:{2:{halign:'right'},3:{halign:'right'},4:{halign:'right'}},
-      didParseCell:(d)=>{ if(d.row.index === 0 || d.row.index === corpo.length-1) d.cell.styles.fontStyle = 'bold'; } });
-    const ySig = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 15, 9, titulo);
-    desenharAssinaturas(pdf, ySig);
+    const { jsPDF } = window.jspdf;
+    const pdf = pdfExtrato(jsPDF, {
+      igreja: igrejaParaPdf(),
+      titulo: `EXTRATO — ${conta.nome.toUpperCase()} — ${MESES[mes-1].toUpperCase()}/${ano}`,
+      ex: { ...ex, linhas: ex.linhas.map(l => ({ ...l, historico: historicoDoMov(l) })) },
+    });
     pdf.save(nomeArquivoPdf(`extrato_${nomeArquivoSeguro(conta.nome)}_${MESES[mes-1]}_${ano}`));
     toast('PDF gerado!');
   } catch(e){ console.error('Erro ao gerar extrato:', e); toast('Erro ao gerar o PDF: '+e.message, true); }
@@ -2578,44 +2571,11 @@ async function gerarPdfCampanha(){
       return na.localeCompare(nb, 'pt-BR');
     });
     const saidas = lancs.filter(l=>l.tipo==='saida').sort((a,b)=>(a.data||'').localeCompare(b.data||''));
-    const totalEntradas = entradas.reduce((s,l)=>s+l.valor,0);
-    const totalSaidas = saidas.reduce((s,l)=>s+l.valor,0);
-
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF();
-    const titulo = `CAMPANHA — ${c.nome.toUpperCase()}`;
-    let y = cabecalhoRelatorioPdf(pdf, titulo);
-
-    y = faixaTitulo(pdf, y, 'RELAÇÃO DE ENTRADAS');
-    const linhasEntradas = entradas.map((l,i)=>[i+1, l.fielNome||'—', l.categoria||'', formatarDataBR(l.data), fmtBRL(l.valor)]);
-    pdf.autoTable({
-      startY:y, head:[['N°','Nome','Categoria','Data','Valor']],
-      body: linhasEntradas.length ? linhasEntradas : [['—','Nenhuma entrada registrada','','','']],
-      theme:'grid', styles:{fontSize:7, cellPadding:1.3}, headStyles:{fillColor:[13,79,196], fontSize:7},
-      columnStyles:{4:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
+    const pdf = pdfCampanha(jsPDF, {
+      igreja: igrejaParaPdf(), titulo: `CAMPANHA — ${c.nome.toUpperCase()}`,
+      campanha: { nome: c.nome, meta: c.meta || 0 }, entradas, saidas,
     });
-    y = pdf.lastAutoTable.finalY + 2;
-    y = garantirEspaco(pdf, y, 8.5, titulo);
-    y = faixaTotal(pdf, y, 'TOTAL DE ENTRADAS (R$)', totalEntradas, [200,230,210]);
-
-    y = garantirEspaco(pdf, y, 25, titulo);
-    y = faixaTitulo(pdf, y, 'RELAÇÃO DE SAÍDAS');
-    const linhasSaidas = saidas.map((l,i)=>[i+1, l.categoria||'', l.descricao||'', formatarDataBR(l.data), fmtBRL(l.valor)]);
-    pdf.autoTable({
-      startY:y, head:[['N°','Categoria','Descrição','Data','Valor']],
-      body: linhasSaidas.length ? linhasSaidas : [['—','Nenhuma saída registrada','','','']],
-      theme:'grid', styles:{fontSize:7, cellPadding:1.3}, headStyles:{fillColor:[199,63,63], fontSize:7},
-      columnStyles:{4:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
-    });
-    y = pdf.lastAutoTable.finalY + 2;
-    y = garantirEspaco(pdf, y, 8.5, titulo);
-    y = faixaTotal(pdf, y, 'TOTAL DE SAÍDAS (R$)', totalSaidas, [248,215,215]);
-    y = garantirEspaco(pdf, y, 8.5, titulo);
-    y = faixaTotal(pdf, y, 'SALDO DA CAMPANHA (R$)', totalEntradas-totalSaidas, [220,230,245]);
-
-    y = garantirEspaco(pdf, y, 19, titulo);
-    desenharAssinaturas(pdf, y + 10);
-
     pdf.save(nomeArquivoPdf(`campanha_${nomeArquivoSeguro(c.nome)}`));
     toast('PDF gerado!');
   } catch(e){
@@ -3495,74 +3455,14 @@ function ehDizimo(nomeCategoria){
 function nomeCabecalhoRelatorio(){
   return (state.igrejaDados.nomeRelatorio || igrejaAtual()?.nome || 'Igreja').toUpperCase();
 }
-// Desenha o cabeçalho padrão dos relatórios em PDF: logo, nome da igreja e
-// uma barra com o título do período. Retorna o Y onde o conteúdo pode começar.
-function cabecalhoRelatorioPdf(pdf, tituloBarra){
-  const logo = state.igrejaDados.logo;
-  let x = 14;
-  if(logo){
-    try{ pdf.addImage(logo, 'JPEG', 14, 6, 16, 16); x = 34; } catch(e){ /* segue sem logo */ }
-  }
-  pdf.setFontSize(11); pdf.setFont(undefined,'bold'); pdf.setTextColor(13,79,196);
-  pdf.text('RELATÓRIO FINANCEIRO DA IGREJA', x, 12);
-  pdf.setFontSize(8); pdf.setFont(undefined,'normal'); pdf.setTextColor(180,120,20);
-  pdf.text('Departamento de Tesouraria', x, 17);
-  pdf.setTextColor(0);
-
-  pdf.setFillColor(13,79,196);
-  pdf.rect(14, 24, 182, 6.5, 'F');
-  pdf.setTextColor(255); pdf.setFontSize(9.5); pdf.setFont(undefined,'bold');
-  pdf.text(nomeCabecalhoRelatorio(), 105, 28.6, { align:'center' });
-
-  pdf.setFillColor(230,238,252);
-  pdf.rect(14, 31, 182, 6, 'F');
-  pdf.setFontSize(9); pdf.setTextColor(13,79,196);
-  pdf.text(tituloBarra, 105, 35.3, { align:'center' });
-  pdf.setTextColor(0); pdf.setFont(undefined,'normal');
-  return 40;
-}
-function faixaTitulo(pdf, y, texto){
-  pdf.setFillColor(30,41,59);
-  pdf.rect(14, y, 182, 6, 'F');
-  pdf.setTextColor(255); pdf.setFontSize(9); pdf.setFont(undefined,'bold');
-  pdf.text(texto, 105, y+4.3, { align:'center' });
-  pdf.setTextColor(0); pdf.setFont(undefined,'normal');
-  return y + 6;
-}
-function faixaTotal(pdf, y, texto, valor, cor){
-  pdf.setFillColor(...(cor||[220,235,245]));
-  pdf.rect(14, y, 182, 6, 'F');
-  pdf.setFontSize(9); pdf.setFont(undefined,'bold');
-  pdf.text(texto, 18, y+4.3);
-  pdf.text(fmtBRL(valor), 192, y+4.3, { align:'right' });
-  pdf.setFont(undefined,'normal');
-  return y + 8.5;
-}
-function desenharAssinaturas(pdf, y){
-  const pastor = state.igrejaDados.pastor || '';
-  const tesoureiro = state.igrejaDados.tesoureiro || '';
-  pdf.setFontSize(8.5);
-  pdf.setDrawColor(0);
-  pdf.line(30, y, 90, y);
-  pdf.line(120, y, 180, y);
-  pdf.text(pastor || '—', 60, y+4.5, { align:'center' });
-  pdf.text('Pastor', 60, y+9, { align:'center' });
-  pdf.text(tesoureiro || '—', 150, y+4.5, { align:'center' });
-  pdf.text('Tesoureiro', 150, y+9, { align:'center' });
-  return y + 9;
-}
-// Garante que ainda cabe "alturaMin" mm antes do fim da página; se não
-// couber, abre página nova e já redesenha o cabeçalho padrão do relatório
-// (assim nenhuma barra de título/total fica cortada ou "solta" sem
-// contexto no topo de uma página). Usado antes de qualquer elemento
-// desenhado na mão (faixaTitulo/faixaTotal/assinaturas) — as tabelas do
-// autoTable já paginam sozinhas.
-function garantirEspaco(pdf, y, alturaMin, tituloBarra){
-  if(y + alturaMin > 283){
-    pdf.addPage();
-    return cabecalhoRelatorioPdf(pdf, tituloBarra);
-  }
-  return y;
+// O desenho de TODOS os PDFs (cabeçalho, faixas, tabelas, assinaturas, paginação)
+// fica em relatorios-pdf.js; aqui só se juntam os dados da tela.
+function igrejaParaPdf(){
+  return {
+    nome: igrejaAtual()?.nome || '', nomeRelatorio: state.igrejaDados.nomeRelatorio || '',
+    logo: state.igrejaDados.logo || null,
+    pastor: state.igrejaDados.pastor || '', tesoureiro: state.igrejaDados.tesoureiro || '',
+  };
 }
 // Soma tudo o que aconteceu ANTES da data informada (para o "saldo anterior")
 // Soma tudo o que aconteceu ANTES da data informada (para o "saldo
@@ -3603,60 +3503,6 @@ function ordenarPorFielNome(lista){
     return na.localeCompare(nb, 'pt-BR');
   });
 }
-function desenharPaginaReceitas(pdf, tituloPeriodo, receitas, rotuloEntradas = 'TOTAL DE ENTRADAS DO MÊS (R$)', comAssinatura = true){
-  const dizimos = receitas.filter(l => ehDizimo(l.categoriaNome));
-  const ofertas = receitas.filter(l => !ehDizimo(l.categoriaNome));
-  const totalDizimos = dizimos.reduce((s,l)=>s+l.valor,0);
-  const totalOfertas = ofertas.reduce((s,l)=>s+l.valor,0);
-  const totalEntradasPg = totalDizimos + totalOfertas;
-  let y = cabecalhoRelatorioPdf(pdf, tituloPeriodo);
-  y = faixaTitulo(pdf, y, 'RELAÇÃO DE DIZIMISTAS E SEUS VALORES');
-
-  const linhasDizimos = dizimos.map((l,i) => [i+1, l.membroNome||'—', formatarDataBR(l.dataStr), fmtBRL(l.valor)]);
-  if(linhasDizimos.length){
-    const metade = Math.ceil(linhasDizimos.length/2);
-    const colEsq = linhasDizimos.slice(0, metade), colDir = linhasDizimos.slice(metade);
-    const opcoes = { head:[['N°','Nome','Data','Valor']], theme:'grid', styles:{fontSize:6.5, cellPadding:1}, headStyles:{fillColor:[13,79,196], fontSize:6.5}, columnStyles:{3:{halign:'right'}}, margin:{bottom:12} };
-    pdf.autoTable({ ...opcoes, startY:y, body:colEsq, margin:{...opcoes.margin, left:14, right:106} });
-    let y1 = pdf.lastAutoTable.finalY;
-    let y2 = y1;
-    if(colDir.length){
-      pdf.autoTable({ ...opcoes, startY:y, body:colDir, margin:{...opcoes.margin, left:106, right:14} });
-      y2 = pdf.lastAutoTable.finalY;
-    }
-    y = Math.max(y1,y2) + 2;
-  } else {
-    pdf.setFontSize(8); pdf.text('Nenhum dízimo registrado neste mês.', 14, y+5); y += 9;
-  }
-  y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
-  y = faixaTotal(pdf, y, 'TOTAL DE DÍZIMOS (R$)', totalDizimos);
-
-  y = garantirEspaco(pdf, y, 25, tituloPeriodo);
-  y = faixaTitulo(pdf, y, 'RELAÇÃO DE OFERTAS');
-  const linhasOfertas = ofertas.map((l,i) => [
-    i+1, l.membroNome||'', [l.categoriaNome, l.descricao].filter(Boolean).join(' - '), formatarDataBR(l.dataStr), fmtBRL(l.valor)
-  ]);
-  pdf.autoTable({
-    startY:y, head:[['N°','Nome do ofertante','Tipo de oferta','Data','Valor']],
-    body: linhasOfertas.length ? linhasOfertas : [['—','Nenhuma oferta registrada neste mês.','','','']],
-    theme:'grid', styles:{fontSize:6.5, cellPadding:1.2}, headStyles:{fillColor:[13,79,196], fontSize:6.5},
-    columnStyles:{4:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
-  });
-  y = pdf.lastAutoTable.finalY + 2;
-  y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
-  y = faixaTotal(pdf, y, 'TOTAL DE OFERTAS (R$)', totalOfertas);
-  y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
-  y = faixaTotal(pdf, y, rotuloEntradas, totalEntradasPg, [200,230,210]);
-
-  // Só abre página nova pra assinatura se realmente não couber (raro,
-  // meses com volume bem fora do comum) — refaz o cabeçalho pra não
-  // deixar uma página "solta" sem contexto.
-  if(!comAssinatura) return y + 4; // relatório CAEB: segue com as despesas e assina só no fim
-  y = garantirEspaco(pdf, y, 19, tituloPeriodo);
-  y = desenharAssinaturas(pdf, y + 10);
-  return y;
-}
-
 $('btnPdfMensal').addEventListener('click', async ()=>{
   const btn = $('btnPdfMensal');
   btn.disabled = true; toast('Gerando PDF...');
@@ -3667,81 +3513,28 @@ $('btnPdfMensal').addEventListener('click', async ()=>{
     const caebeira = !!state.igrejaDados?.caebeira;
     const foraDoGeral = tiposForaDoGeral();
     const lancs = (await buscarLancamentos(mes, ano)).filter(l => !(caebeira && foraDoGeral.has(l.categoriaId)));
-    const ordenarPorFiel = (lista) => [...lista].sort((a,b) => {
-      const na = (a.membroNome||'').trim(), nb = (b.membroNome||'').trim();
-      if(!na && !nb) return 0;
-      if(!na) return 1;
-      if(!nb) return -1;
-      return na.localeCompare(nb, 'pt-BR');
-    });
-    const receitas = ordenarPorFiel(lancs.filter(l=>l.tipo==='receita'));
+    const receitas = ordenarPorFielNome(lancs.filter(l=>l.tipo==='receita'));
     const despesas = lancs.filter(l=>l.tipo==='despesa').sort((a,b)=>(a.dataStr||'').localeCompare(b.dataStr||''));
-    const dizimos = receitas.filter(l => ehDizimo(l.categoriaNome));
-    const ofertas = receitas.filter(l => !ehDizimo(l.categoriaNome));
-    const totalDizimos = dizimos.reduce((s,l)=>s+l.valor,0);
-    const totalOfertas = ofertas.reduce((s,l)=>s+l.valor,0);
-    const totalEntradas = totalDizimos + totalOfertas;
-    const totalSaidas = despesas.reduce((s,l)=>s+l.valor,0);
     const saldoAnterior = caebeira ? await saldoAnteriorGeral(mes, ano) : await saldoAnteriorA(mes, ano);
-    const saldoMes = totalEntradas - totalSaidas;
 
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF();
-    const tituloPeriodo = `RELATÓRIO DO MÊS DE ${MESES[mes-1].toUpperCase()} DE ${ano}`;
-
-    // ---- PÁGINA 1: dizimistas + ofertas (por ordem alfabética do fiel) ----
-    let y = desenharPaginaReceitas(pdf, tituloPeriodo, receitas, 'TOTAL DE ENTRADAS DO MÊS (R$)', false);
-
-    // ---- Despesas (por data) + balanço final, em fluxo contínuo ----
-    // Antes as despesas sempre abriam página nova porque o modelo vinha de uma
-    // planilha Excel, que não conseguia gerar tudo junto. Aqui o relatório é
-    // contínuo: só quebra quando não couber (garantirEspaco recria o cabeçalho),
-    // e a assinatura aparece uma única vez, no final.
-    y = garantirEspaco(pdf, y, 25, tituloPeriodo);
-    y = faixaTitulo(pdf, y, 'RELAÇÃO DE DESPESAS');
-    const linhasDespesas = despesas.map((l,i) => [i+1, [l.categoriaNome, l.descricao].filter(Boolean).join(' - '), formatarDataBR(l.dataStr), fmtBRL(l.valor)]);
-    pdf.autoTable({
-      startY:y, head:[['N°','Descrição da despesa','Data','Valor (R$)']],
-      body: linhasDespesas.length ? linhasDespesas : [['—','Nenhuma despesa registrada neste mês.','','']],
-      theme:'grid', styles:{fontSize:6.5, cellPadding:1.2}, headStyles:{fillColor:[199,63,63], fontSize:6.5},
-      columnStyles:{3:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
-    });
-    y = pdf.lastAutoTable.finalY + 2;
-    y = garantirEspaco(pdf, y, 8.5, tituloPeriodo);
-    y = faixaTotal(pdf, y, 'TOTAL DE DESPESAS (R$)', totalSaidas, [248,215,215]);
-
-    y = garantirEspaco(pdf, y, 65, tituloPeriodo);
-    y = faixaTitulo(pdf, y, 'BALANÇO FINAL');
-    const percentual = totalEntradas > 0 ? ((totalSaidas/totalEntradas)*100).toFixed(2)+'%' : '—';
-    const linhasBalanco = [
-      ['Total de entradas do mês', fmtBRL(totalEntradas)],
-      ['Total de saídas do mês', fmtBRL(totalSaidas)],
-      ['Percentual despesa/receita', percentual],
-      ['Saldo do mês', fmtBRL(saldoMes)],
-      ['Saldo anterior', fmtBRL(saldoAnterior)],
-      ['Saldo para o próximo mês', fmtBRL(saldoAnterior + saldoMes)],
-    ];
-    const idxDestaque = linhasBalanco.length - 1;
     // Saldo financeiro REAL: o que a(s) conta(s) tinham de fato ao fim do mês
-    // (por data do lançamento, como o extrato do banco). Difere do saldo acima
-    // quando há lançamentos de outra competência ou tipos fora deste relatório.
+    // (por data do lançamento, como o extrato do banco). Difere do saldo do
+    // relatório quando há lançamentos de outra competência ou tipos fora dele.
     // Contas só aparecem se a igreja as cadastrou e o mês é posterior ao saldo inicial.
+    const linhasContas = [];
     const fimDoMes = iniProxMesISO(ano, mes);
     const contasDoMes = ordenarPorNome(state.contas).filter(c => c.dataSaldo && fimDoMes > c.dataSaldo);
     if(contasDoMes.length){
       const saldosContas = await Promise.all(contasDoMes.map(c => saldoDaContaAntesDe(c, fimDoMes, false)));
-      contasDoMes.forEach((c,i) => linhasBalanco.push([`Saldo financeiro real - ${c.nome} (fim do mês)`, fmtBRL(saldosContas[i])]));
-      if(contasDoMes.length > 1) linhasBalanco.push(['Saldo financeiro real - total das contas', fmtBRL(saldosContas.reduce((s,v)=>s+v,0))]);
+      contasDoMes.forEach((c,i) => linhasContas.push([`Saldo financeiro real - ${c.nome} (fim do mês)`, saldosContas[i]]));
+      if(contasDoMes.length > 1) linhasContas.push(['Saldo financeiro real - total das contas', saldosContas.reduce((s,v)=>s+v,0)]);
     }
-    pdf.autoTable({
-      startY:y, body: linhasBalanco, theme:'grid', styles:{fontSize:8.5, cellPadding:2}, margin:{bottom:12},
-      columnStyles:{0:{fontStyle:'bold'}, 1:{halign:'right'}},
-      didParseCell: (data)=>{ if(data.row.index === idxDestaque) data.row.cells[0].styles.fillColor = data.row.cells[1].styles.fillColor = [210,235,215]; }
-    });
-    y = pdf.lastAutoTable.finalY + 10;
-    y = garantirEspaco(pdf, y, 9, tituloPeriodo);
-    desenharAssinaturas(pdf, y);
 
+    const { jsPDF } = window.jspdf;
+    const pdf = pdfMensal(jsPDF, {
+      igreja: igrejaParaPdf(), titulo: `RELATÓRIO DO MÊS DE ${MESES[mes-1].toUpperCase()} DE ${ano}`,
+      receitas, despesas, saldoAnterior, linhasContas,
+    });
     pdf.save(nomeArquivoPdf(`relatorio_mensal_${MESES[mes-1]}_${ano}`));
     toast('PDF gerado!');
   } catch(e){
@@ -3760,41 +3553,13 @@ $('btnPdfCaeb').addEventListener('click', async ()=>{
     const lancs = await buscarLancamentos(mes, ano);
     const c = calcularCaeb(lancs, await saldoAnteriorCaeb(mes, ano));
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF();
-    const titulo = `RELATÓRIO CAEB — ${MESES[mes-1].toUpperCase()} DE ${ano}`;
-    // Mesma relação nominal do relatório mensal, mas só com as
-    // receitas computáveis (repasse da CAEB fora).
-    // Despesas e apuração vêm logo abaixo, sem quebra de página forçada, e a
-    // assinatura aparece uma única vez, no final (garantirEspaco só quebra
-    // se realmente não couber).
-    let y = desenharPaginaReceitas(pdf, titulo, ordenarPorFielNome(c.receitasBase), 'TOTAL DE RECEITAS COMPUTÁVEIS (R$)', false);
-    y = garantirEspaco(pdf, y, 25, titulo);
-    y = faixaTitulo(pdf, y, 'DESPESAS DENTRO DO CÁLCULO DA CAEB');
-    const linhasD = c.despCaeb.map((l,i)=>[i+1, [l.categoriaNome, l.descricao].filter(Boolean).join(' - '), formatarDataBR(l.dataStr), fmtBRL(l.valor)]);
-    pdf.autoTable({ startY:y, head:[['N°','Descrição da despesa','Data','Valor (R$)']],
-      body: linhasD.length ? linhasD : [['—','Nenhuma despesa CAEB neste mês.','','']],
-      theme:'grid', styles:{fontSize:6.5, cellPadding:1.2}, headStyles:{fillColor:[199,63,63], fontSize:6.5}, columnStyles:{3:{halign:'right'}}, margin:{left:14,right:14,bottom:12} });
-    y = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 2, 8.5, titulo);
-    y = faixaTotal(pdf, y, 'TOTAL DE DESPESAS CAEB (R$)', c.totalDespesas, [248,215,215]);
-
-    y = garantirEspaco(pdf, y, 95, titulo);
-    y = faixaTitulo(pdf, y, 'APURAÇÃO DA CAEB');
-    // Só caracteres ASCII/latinos nos rótulos: o símbolo "-" não existe na fonte do PDF.
-    const linhasB = [
-      ['Receitas computáveis (sem repasse da CAEB)', fmtBRL(c.totalReceitas)],
-      ['Despesas dentro do cálculo CAEB', fmtBRL(c.totalDespesas)],
-      ['Resultado do mês (receitas - despesas)', fmtBRL(c.resultado)],
-      ['Saldo anterior da CAEB', fmtBRL(c.saldoAnterior)],
-      ['Saldo acumulado (saldo anterior + resultado)', fmtBRL(c.saldoAcumulado)],
-      ['Valor a ser coberto pela CAEB (bruto)', fmtBRL(c.aCobrir)],
-      ['(-) Contribuição à CAEB, já incluída nas despesas', fmtBRL(c.totalContribuicao)],
-      [c.liquido >= 0 ? 'VALOR LÍQUIDO A SER REPASSADO PELA CAEB' : 'VALOR LÍQUIDO A SER REPASSADO À CAEB', fmtBRL(Math.abs(c.liquido))],
-    ];
-    pdf.autoTable({ startY:y, body: linhasB, theme:'grid', styles:{fontSize:8.5, cellPadding:2}, margin:{bottom:12},
-      columnStyles:{0:{fontStyle:'bold'}, 1:{halign:'right'}},
-      didParseCell:(data)=>{ if(data.row.index === 7) data.row.cells[0].styles.fillColor = data.row.cells[1].styles.fillColor = [210,235,215]; } });
-    y = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 10, 20, titulo);
-    desenharAssinaturas(pdf, y);
+    // Mesma relação nominal do relatório mensal, mas só com as receitas
+    // computáveis (repasse da CAEB fora). Despesas e apuração seguem em fluxo
+    // contínuo, e a assinatura aparece uma única vez, no final.
+    const pdf = pdfCaeb(jsPDF, {
+      igreja: igrejaParaPdf(), titulo: `RELATÓRIO CAEB — ${MESES[mes-1].toUpperCase()} DE ${ano}`,
+      receitasBase: ordenarPorFielNome(c.receitasBase), despCaeb: c.despCaeb, c,
+    });
     pdf.save(nomeArquivoPdf(`relatorio_caeb_${MESES[mes-1]}_${ano}`));
     toast('PDF gerado!');
   } catch(e){
@@ -3809,25 +3574,9 @@ $('btnPdfAnual').addEventListener('click', async ()=>{
   try{
     const ano = parseInt($('relAnoAnual').value);
     const porMes = await resumoAnualComSaldo(ano);
-    let totalR = 0, totalD = 0;
-    const linhas = porMes.map((m,i)=>{
-      totalR += m.receitas; totalD += m.despesas;
-      return [MESES[i], fmtBRL(m.saldoAnterior), fmtBRL(m.receitas), fmtBRL(m.despesas), fmtBRL(m.receitas-m.despesas)];
-    });
-    linhas.push(['Total', '', fmtBRL(totalR), fmtBRL(totalD), fmtBRL(totalR-totalD)]);
-
+    const meses = porMes.map((m,i) => ({ nome: MESES[i], saldoAnterior: m.saldoAnterior, receitas: m.receitas, despesas: m.despesas }));
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF();
-    const tituloAnual = `FLUXO DE CAIXA ANUAL — ${ano}`;
-    const y = cabecalhoRelatorioPdf(pdf, tituloAnual);
-    pdf.autoTable({
-      startY: y, head:[['Mês','Saldo Anterior','Receitas','Despesas','Saldo do Mês']], body: linhas,
-      theme:'grid', headStyles:{fillColor:[13,79,196]}, margin:{left:14,right:14,bottom:12},
-      columnStyles:{1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'}},
-      didParseCell: (data)=>{ if(data.row.index === linhas.length-1) data.cell.styles.fontStyle = 'bold'; }
-    });
-    const yAssinatura = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 15, 9, tituloAnual);
-    desenharAssinaturas(pdf, yAssinatura);
+    const pdf = pdfAnual(jsPDF, { igreja: igrejaParaPdf(), titulo: `FLUXO DE CAIXA ANUAL — ${ano}`, meses });
     pdf.save(nomeArquivoPdf(`fluxo_anual_${ano}`));
     toast('PDF gerado!');
   } catch(e){
@@ -3847,27 +3596,13 @@ $('btnPdfFiel').addEventListener('click', async ()=>{
     const nomeFiel = $('relFielBusca').value.trim();
     const inicio = $('relFielDataInicio').value, fim = $('relFielDataFim').value;
     const lancs = filtrarPorPeriodo(await buscarLancamentosDoFiel(fielId), inicio, fim);
-    const total = lancs.reduce((s,l)=>s+l.valor,0);
     const periodoTexto = (inicio || fim)
       ? `Período: ${inicio ? formatarDataBR(inicio) : 'início'} até ${fim ? formatarDataBR(fim) : 'hoje'}`
       : 'Período: todo o histórico';
-
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF();
-    const tituloExtrato = `EXTRATO DE CONTRIBUIÇÕES — ${nomeFiel.toUpperCase()}`;
-    const y = cabecalhoRelatorioPdf(pdf, tituloExtrato);
-    pdf.setFontSize(8.5); pdf.setTextColor(100); pdf.text(periodoTexto, 14, y-3); pdf.setTextColor(0);
-    const linhas = lancs.map(l => [formatarDataBR(l.dataStr), l.categoriaNome||'', fmtBRL(l.valor)]);
-    pdf.autoTable({
-      startY: y, head:[['Data','Categoria','Valor']], body: linhas.length?linhas:[['—','Nenhuma contribuição registrada','—']],
-      theme:'grid', headStyles:{fillColor:[13,79,196]}, columnStyles:{2:{halign:'right'}}, margin:{left:14,right:14,bottom:12}
+    const pdf = pdfFiel(jsPDF, {
+      igreja: igrejaParaPdf(), titulo: `EXTRATO DE CONTRIBUIÇÕES — ${nomeFiel.toUpperCase()}`, periodoTexto, lancs,
     });
-    let yFinal = garantirEspaco(pdf, pdf.lastAutoTable.finalY + 15, 24, tituloExtrato);
-    pdf.setFontSize(11); pdf.setFont(undefined,'bold');
-    pdf.text(`Total geral: ${fmtBRL(total)}`, 14, yFinal);
-    pdf.setFont(undefined,'normal');
-    desenharAssinaturas(pdf, yFinal + 15);
-
     pdf.save(nomeArquivoPdf(`extrato_${nomeArquivoSeguro(nomeFiel)}`));
     toast('PDF gerado!');
   } catch(e){

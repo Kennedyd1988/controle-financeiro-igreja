@@ -659,3 +659,15 @@ O resgate de convite nunca funcionava para quem já tinha conta: para saber se a
 **Limitações conhecidas.** (1) A senha fica em texto no Firestore, visível apenas a quem tem acesso ao console. (2) Não há limite de tentativas: use uma frase longa, não uma senha curta. (3) Quem conhece a senha tem poder total sobre todas as igrejas.
 
 **Acesso direto, sem convites.** Ao cadastrar um usuário cujo e-mail já tem conta, o admin não cria mais convite: o app consulta `usuariosPorEmail/{email}` (gravado pelo próprio usuário a cada login, com o uid dele) e grava o vínculo direto, com o papel e as abas escolhidos. Mudar papel ou abas depois vale na hora, para cima ou para baixo. Se o e-mail tem conta mas a pessoa nunca entrou na versão 20, o índice não existe: o app pede que ela entre uma vez e o admin cadastra de novo. Convites antigos ainda pendentes continuam sendo resgatados (código mantido só por compatibilidade).
+
+## Novo visual dos relatórios em PDF (versão 21)
+
+Todos os PDFs do app (mensal, CAEB, fluxo anual, extrato do fiel, extrato da conta e campanha) passaram a ser desenhados por um único módulo, `relatorios-pdf.js`. O `app.js` apenas junta os dados da tela e chama a função do relatório; o desenho (cabeçalho, faixas, tabelas, assinaturas, numeração) não é mais repetido em cada handler. A agenda semanal não foi alterada.
+
+O visual segue a ideia de Visual Law: cada relatório abre com um resumo (cartões e barras proporcionais) antes das tabelas, usa cor com significado (verde = entrada, rosé = saída, azul-ardósia = saldo) em tons suaves, linguagem direta e cabeçalhos de tabela centralizados. A caixa de frase explicativa do gráfico foi retirada a pedido.
+
+Quebra de página: se o relatório não couber em uma folha, ele continua na seguinte de forma contínua. O cabeçalho da igreja é redesenhado e os cabeçalhos das tabelas se repetem em cada folha, com "Página X de N" quando há mais de uma. As assinaturas aparecem uma única vez, no final. No CAEB, se a apuração não couber na primeira folha, ela vai inteira para a seguinte junto com as assinaturas (deixando espaço em branco na primeira, de propósito, para não separar a conta da assinatura).
+
+Detalhe técnico que já causou erro: no autoTable, `data.pageNumber` dentro de `didDrawPage` é relativo à tabela, não ao documento; por isso o código usa `pdf.getCurrentPageInfo().pageNumber` para decidir quando redesenhar o cabeçalho.
+
+Ajuste posterior (versão 21): o balanço final e a apuração da CAEB seguem o fluxo contínuo, sem empurrar o bloco inteiro para a página seguinte (só o título com suas 3 primeiras linhas é mantido junto). A apuração da CAEB mostra apenas seis linhas: receitas computáveis, despesas computáveis, resultado do mês, valor a ser coberto, contribuição à CAEB e valor líquido. As linhas de conta bancária no balanço do mensal só aparecem quando a igreja tem conta cadastrada.
