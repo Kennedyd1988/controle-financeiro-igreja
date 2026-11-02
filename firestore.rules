@@ -6,9 +6,27 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function ehMembro(igrejaId) {
+    // MODO MASTER: quem digitou a senha master (documento masters/{uid}, que a
+    // regra só grava se a senha bater com config/master, doc que NENHUM cliente
+    // lê) enxerga e administra todas as igrejas. A senha é conferida de novo
+    // a cada acesso: trocar config/master.senha no console derruba todos os
+    // masters na hora.
+    function isMaster() {
+      return logado() &&
+        exists(/databases/$(database)/documents/masters/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/masters/$(request.auth.uid)).data.senha ==
+          get(/databases/$(database)/documents/config/master).data.senha;
+    }
+
+    // Membro "de verdade" (tem documento em usuarios). Separado de ehMembro
+    // porque membro()/papel() só funcionam quando esse documento existe.
+    function ehMembroReal(igrejaId) {
       return logado() &&
         exists(/databases/$(database)/documents/igrejas/$(igrejaId)/usuarios/$(request.auth.uid));
+    }
+
+    function ehMembro(igrejaId) {
+      return isMaster() || ehMembroReal(igrejaId);
     }
 
     function membro(igrejaId) {
@@ -20,7 +38,7 @@ service cloud.firestore {
     }
 
     function isAdmin(igrejaId) {
-      return ehMembro(igrejaId) && papel(igrejaId) == 'admin';
+      return isMaster() || (ehMembroReal(igrejaId) && papel(igrejaId) == 'admin');
     }
 
     // Contas criadas antes do sistema de permissão por aba não têm o campo
@@ -37,7 +55,7 @@ service cloud.firestore {
     }
 
     function podeEditar(igrejaId) {
-      return ehMembro(igrejaId) && (papel(igrejaId) == 'admin' || papel(igrejaId) == 'cadastrador');
+      return isMaster() || (ehMembroReal(igrejaId) && (papel(igrejaId) == 'admin' || papel(igrejaId) == 'cadastrador'));
     }
 
     function podeEditarAba(igrejaId, aba) {
@@ -81,11 +99,9 @@ service cloud.firestore {
     // subcoleção, e não usamos collectionGroup) para permitir uma consulta
     // simples e segura por uid, sem depender de checagem cruzada de outro
     // documento — o Firestore não lida bem com isso em buscas amplas.
-    // Criar o próprio índice só com convite válido; quem acabou de criar a
-    // igreja já é admin (o vínculo em "usuarios" é gravado antes), e o admin
-    // também cria o índice de quem ele cadastra. A antiga brecha
-    // "!exists(usuarios)" saiu: com ela qualquer logado se anunciava como
-    // membro de qualquer igreja.
+    // Criar o próprio índice só com convite antigo válido; o admin (ou master)
+    // cria o índice de quem ele cadastra. A antiga brecha "!exists(usuarios)"
+    // saiu: com ela qualquer logado se anunciava como membro de qualquer igreja.
     match /membrosIndice/{docId} {
       allow read: if logado() && resource.data.uid == request.auth.uid;
       allow create: if logado() && request.auth.uid == request.resource.data.uid &&
@@ -104,37 +120,49 @@ service cloud.firestore {
       allow delete: if logado() && (resource.data.email == request.auth.token.email || isAdmin(resource.data.igrejaId));
     }
 
-    // Igreja recém-criada que ainda não tem o primeiro admin vinculado.
-    // O app liga a marca "bootstrapPendente" e a desliga logo após criar o
-    // vínculo do criador — assim o criador não consegue se re-adicionar como
-    // admin depois que alguém o removeu.
-    function bootstrapDoCriador(igrejaId) {
-      return logado() &&
-        get(/databases/$(database)/documents/igrejas/$(igrejaId)).data.get('criadoPor', '') == request.auth.uid &&
-        get(/databases/$(database)/documents/igrejas/$(igrejaId)).data.get('bootstrapPendente', false) == true;
+    // Ativação do modo master. Só grava se a senha digitada bater com a de
+    // config/master. Cada um lê/apaga apenas o próprio documento (sair do modo).
+    match /masters/{uid} {
+      allow read, delete: if logado() && request.auth.uid == uid;
+      allow create, update: if logado() && request.auth.uid == uid &&
+        request.resource.data.senha ==
+          get(/databases/$(database)/documents/config/master).data.senha;
+    }
+
+    // Guarda a senha master (campo "senha"), criada à mão no console do
+    // Firebase. Nenhum cliente lê nem grava aqui.
+    match /config/{docId} {
+      allow read, write: if false;
+    }
+
+    // "Qual é o uid deste e-mail?" — gravado pelo próprio usuário a cada login.
+    // Permite ao admin dar acesso direto a quem já tem conta, sem convite e
+    // sem servidor. Só leitura pontual (get): ninguém lista a coleção.
+    match /usuariosPorEmail/{email} {
+      allow get: if logado();
+      allow list: if false;
+      allow create, update: if logado() &&
+        request.auth.token.email.lower() == email &&
+        request.resource.data.uid == request.auth.uid;
+      allow delete: if false;
     }
 
     match /igrejas/{igrejaId} {
       allow read: if ehMembro(igrejaId);
-      // Criar igreja exige ser administrador AGORA de alguma igreja, que o
-      // app informa em "origemAdminId". Nada fica guardado: ao ser rebaixado
-      // (ou removido) o usuário perde este direito automaticamente.
-      allow create: if logado() &&
-        request.resource.data.criadoPor == request.auth.uid &&
-        isAdmin(request.resource.data.origemAdminId);
+      // Só o master cria igreja. Administradores comuns administram apenas a
+      // sua (usuários, dados, exclusão).
+      allow create: if isMaster();
       allow update: if isAdmin(igrejaId);
-      // Exclusão só por admin. A regra de "sem lançamentos" é checada pelo
-      // app antes de apagar; a regra aqui garante que só admin chega lá.
+      // Exclusão só por admin (ou master). A regra de "sem lançamentos" é
+      // checada pelo app antes de apagar; a regra aqui garante que só admin chega lá.
       allow delete: if isAdmin(igrejaId);
 
       match /usuarios/{uid} {
         allow read: if ehMembro(igrejaId);
-        // Pode criar o próprio vínculo se: (a) é o primeiro membro da igreja
-        // recém-criada por ele mesmo, ou (b) existe um convite válido para o
-        // e-mail dele. Um admin também pode adicionar outros diretamente.
-        allow create: if logado() && request.auth.uid == uid &&
-          (conviteValido(igrejaId) ||
-           (bootstrapDoCriador(igrejaId) && !exists(/databases/$(database)/documents/igrejas/$(igrejaId)/usuarios/$(request.auth.uid))))
+        // O admin da igreja (ou o master) cadastra o usuário já com acesso
+        // direto. O próprio usuário só cria o vínculo por convite antigo
+        // (resgate de convites pendentes de versões anteriores).
+        allow create: if logado() && request.auth.uid == uid && conviteValido(igrejaId)
           || isAdmin(igrejaId);
         allow update: if isAdmin(igrejaId) ||
           (logado() && request.auth.uid == uid &&
@@ -144,7 +172,10 @@ service cloud.firestore {
 
       match /convites/{email} {
         allow read: if isAdmin(igrejaId) || (logado() && request.auth.token.email == email);
-        allow write: if isAdmin(igrejaId);
+        allow create, update: if isAdmin(igrejaId);
+        // O convidado precisa apagar o próprio convite ao resgatá-lo; sem isso
+        // o convite ficava pendente na lista do admin para sempre.
+        allow delete: if isAdmin(igrejaId) || (logado() && request.auth.token.email == email);
       }
 
       match /membros/{docId} {

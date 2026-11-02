@@ -52,8 +52,8 @@ const state = {
   perfil: null,
   igrejas: [],          // [{id, nome, papel, abas}]
   igrejaAtualId: null,
-  podeCriarIgreja: false, // só quem é administrador de alguma igreja cria igrejas (ver verificarPodeCriarIgreja)
-  origemAdminId: null,    // uma igreja onde o usuário é admin; a regra do Firestore confere
+  ehMaster: false,        // digitou a senha master: vê todas as igrejas (ver verificarMaster)
+  podeCriarIgreja: false, // = ehMaster; só o master cria igrejas
   igrejaDados: {},       // dados completos da igreja atual (inclui logo)
   categoriasReceita: [],
   categoriasDespesa: [],
@@ -322,6 +322,7 @@ onAuthStateChanged(auth, async (user)=>{
     mostrarCarregando();
     state.user = user;
     await carregarPerfil(user);
+    await verificarMaster(user);   // antes da lista: master enxerga todas as igrejas
     await resgatarConvitesPendentes(user);
     await buscarListaIgrejasDoUsuario(user);
     esconderCarregando();
@@ -340,6 +341,7 @@ onAuthStateChanged(auth, async (user)=>{
     }
   } else {
     state.user = null;
+    state.ehMaster = false; state.podeCriarIgreja = false;
     $('authScreen').style.display = 'flex';
     $('appShell').className = '';
     if($('selecionarIgrejaScreen')) $('selecionarIgrejaScreen').style.display = 'none';
@@ -357,6 +359,31 @@ async function carregarPerfil(user){
   }
   $('userNomeChip').textContent = state.perfil.nome;
   $('userAvatar').textContent = iniciais(state.perfil.nome);
+  // Índice e-mail → uid: é o que permite a um admin dar acesso DIRETO a quem
+  // já tem conta (sem convite). Gravado a cada login; falhar não impede entrar.
+  try{
+    await setDoc(doc(db, 'usuariosPorEmail', user.email.toLowerCase()),
+      { uid: user.uid, nome: state.perfil.nome, atualizadoEm: serverTimestamp() });
+  } catch(e){ console.warn('usuariosPorEmail:', e.message); }
+}
+
+// ---------- MODO MASTER ----------
+// Master = quem digitou a senha master (conferida pela REGRA do Firestore, não
+// pelo app): vê e administra todas as igrejas e é o único que cria igrejas.
+// O documento masters/{uid} fica salvo, então o modo continua ligado nos
+// próximos logins até a pessoa sair do modo ou a senha ser trocada.
+async function verificarMaster(user){
+  state.ehMaster = false;
+  try{
+    const m = await getDoc(doc(db, 'masters', user.uid));
+    if(!m.exists()) return;
+    // Teste real: listar igrejas só é permitido se a senha AINDA vale.
+    await getDocs(query(collection(db, 'igrejas'), limit(1)));
+    state.ehMaster = true;
+  } catch(e){
+    // Senha master trocada depois da ativação: limpa o documento velho.
+    try{ await deleteDoc(doc(db, 'masters', user.uid)); }catch(e2){}
+  }
 }
 
 // Verifica se existe convite (em qualquer igreja) para o e-mail do usuário logado,
@@ -379,8 +406,14 @@ async function resgatarConvitesPendentes(user){
       // permissões dela — só descarta o convite antigo. Isso evita que um
       // admin se rebaixe sem querer ao criar um convite pro próprio e-mail
       // (ex: durante testes).
-      const jaMembro = await getDoc(doc(db, 'igrejas', igrejaId, 'usuarios', user.uid));
-      if(!jaMembro.exists()){
+      // ATENÇÃO (bug corrigido): a regra só deixa ler "usuarios" quem JÁ é
+      // membro, então para quem ainda não é este getDoc dá permission-denied.
+      // Antes o erro caía no catch geral e o convite nunca era resgatado.
+      // Negado = não é membro; existir = já é membro.
+      let jaMembro = false;
+      try{ jaMembro = (await getDoc(doc(db, 'igrejas', igrejaId, 'usuarios', user.uid))).exists(); }
+      catch(e){ jaMembro = false; }
+      if(!jaMembro){
         await setDoc(doc(db, 'igrejas', igrejaId, 'usuarios', user.uid), {
           uid: user.uid, nome: state.perfil.nome, email: user.email,
           papel: dados.papel, abasPermitidas: abas, criadoEm: serverTimestamp()
@@ -391,8 +424,10 @@ async function resgatarConvitesPendentes(user){
         });
         liberadas.push(dados.igrejaNome || 'nova igreja');
       }
-      await deleteDoc(doc(db, 'igrejas', igrejaId, 'convites', user.email));
+      // Índice primeiro (é o que faz o convite aparecer como pendente); o
+      // documento do convite é limpeza e não pode impedir o resto.
       await deleteDoc(convDoc.ref);
+      try{ await deleteDoc(doc(db, 'igrejas', igrejaId, 'convites', user.email)); }catch(e){ console.warn('Convite não apagado:', e.message); }
      } catch(e){ console.warn('Convite não resgatado:', e.message); }
     }
   } catch(e){ console.warn('Sem convites pendentes:', e.message); }
@@ -408,13 +443,17 @@ async function atualizarConvitesAgora(manual){
   convitesVerificando = true;
   convitesUltimaVerificacao = Date.now();
   try{
-    const novas = await resgatarConvitesPendentes(state.user);
+    // Também recarrega a lista sempre: o admin agora libera acesso DIRETO (sem
+    // convite), então a igreja nova pode já existir no índice do usuário.
+    await resgatarConvitesPendentes(state.user);
+    const antes = new Set(state.igrejas.map(i => i.id));
+    await buscarListaIgrejasDoUsuario(state.user);
+    if(state.igrejaAtualId) $('igrejaSwitch').value = state.igrejaAtualId;
+    const novas = state.igrejas.filter(i => !antes.has(i.id)).map(i => i.nome);
     if(novas.length){
-      await buscarListaIgrejasDoUsuario(state.user);
-      if(state.igrejaAtualId) $('igrejaSwitch').value = state.igrejaAtualId;
       toast('Novo acesso liberado: ' + novas.join(', ') + '. Escolha no seletor de igreja.');
     } else if(manual){
-      toast('Nenhum convite novo.');
+      toast('Nenhum acesso novo.');
     }
   } catch(e){
     if(manual) toast('Erro ao verificar convites: ' + e.message, true);
@@ -431,6 +470,19 @@ document.addEventListener('visibilitychange', ()=>{
 // Só busca a lista de igrejas do usuário (sem entrar em nenhuma) — usado
 // no login, antes de mostrar a tela de escolher a igreja.
 async function buscarListaIgrejasDoUsuario(user){
+  if(state.ehMaster){
+    // Master: todas as igrejas, em ordem alfabética, como administrador de cada uma.
+    const todas = await getDocs(collection(db, 'igrejas'));
+    state.igrejas = todas.docs.map(d => ({
+      id: d.id, nome: d.data().nome || '(sem nome)', logo: d.data().logo || null,
+      papel: 'admin', abas: TODAS_ABAS, precisaTrocarSenha: false
+    })).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR', {sensitivity:'base'}));
+    $('igrejaSwitch').innerHTML = state.igrejas.length
+      ? state.igrejas.map(i => `<option value="${i.id}">${i.nome}</option>`).join('')
+      : `<option>Nenhuma igreja ainda</option>`;
+    await verificarPodeCriarIgreja(user);
+    return;
+  }
   const q = query(collection(db, 'membrosIndice'), where('uid', '==', user.uid));
   const snaps = await getDocs(q);
   // Busca o nome ATUAL de cada igreja (em vez de confiar só no que estava
@@ -457,20 +509,19 @@ async function buscarListaIgrejasDoUsuario(user){
   await verificarPodeCriarIgreja(user);
 }
 
-// Só administradores criam igrejas: quem é admin de ALGUMA igreja neste
-// momento. Nada é gravado à parte — a regra do Firestore confere o papel
-// atual na igreja informada em "origemAdminId", então rebaixar alguém tira
-// o direito na hora. A interface só esconde o botão; quem barra é a regra.
+// Só o MASTER cria igrejas. Administradores comuns cuidam apenas da sua
+// igreja. A interface só esconde o botão; quem barra de verdade é a regra
+// do Firestore (isMaster).
 async function verificarPodeCriarIgreja(user){
-  const adminEm = state.igrejas.find(i => i.papel === 'admin');
-  state.origemAdminId = adminEm ? adminEm.id : null;
-  const pode = !!adminEm;
+  const pode = !!state.ehMaster;
   state.podeCriarIgreja = pode;
+  const bm = $('btnModoMaster');
+  if(bm) bm.textContent = pode ? '🔑 Master ativo — sair do modo master' : '🔑 Modo master';
   const nav = $('navNovaIgreja');
   if(nav) nav.style.display = pode ? 'flex' : 'none';
 }
 
-// Tela "Nova igreja": formulário para admin; aviso + "Verificar convites" para os demais.
+// Tela "Nova igreja": formulário só para o master; aviso + "Verificar convites" para os demais.
 function renderNovaIgreja(){
   const pode = state.podeCriarIgreja;
   $('novaIgrejaForm').style.display = pode ? 'block' : 'none';
@@ -478,8 +529,42 @@ function renderNovaIgreja(){
   const desc = document.querySelector('#view-novaIgreja .view-desc');
   const tit = document.querySelector('#view-novaIgreja .view-title');
   if(tit) tit.textContent = pode ? 'Cadastrar nova igreja' : 'Aguardando acesso';
-  if(desc) desc.textContent = pode ? 'Você se torna administrador dela automaticamente' : 'Peça ao administrador para liberar o seu e-mail';
+  if(desc) desc.textContent = pode ? 'Depois de criar, cadastre o administrador dela em Usuários' : 'Peça ao administrador para liberar o seu e-mail';
 }
+
+// ---- Botão "Modo master" (barra lateral) ----
+$('btnModoMaster').addEventListener('click', async ()=>{
+  if(state.ehMaster){
+    if(!confirm('Sair do modo master? Você voltará a ver só as igrejas em que é usuário.')) return;
+    try{ await deleteDoc(doc(db,'masters', state.user.uid)); }catch(e){}
+    state.ehMaster = false;
+    state.igrejaAtualId = null;
+    await carregarIgrejasDoUsuario(state.user);
+    toast('Modo master desligado.');
+    return;
+  }
+  $('masterSenha').value = ''; $('masterSenha').classList.remove('input-error');
+  $('modalMaster').classList.add('active');
+  setTimeout(()=> $('masterSenha').focus(), 50);
+});
+$('btnCancelarMaster').addEventListener('click', ()=> $('modalMaster').classList.remove('active'));
+$('btnConfirmarMaster').addEventListener('click', async ()=>{
+  const senha = $('masterSenha').value;
+  if(!senha){ $('masterSenha').classList.add('input-error'); toast('Digite a senha master.', true); return; }
+  const btn = $('btnConfirmarMaster');
+  btn.disabled = true; btn.textContent = 'Verificando...';
+  try{
+    // A regra do Firestore só aceita a gravação se a senha bater.
+    await setDoc(doc(db,'masters', state.user.uid), { senha, ativadoEm: serverTimestamp() });
+    state.ehMaster = true;
+    $('modalMaster').classList.remove('active');
+    await carregarIgrejasDoUsuario(state.user);
+    toast('Modo master ligado: você vê todas as igrejas.');
+  } catch(e){
+    $('masterSenha').classList.add('input-error');
+    toast('Senha master incorreta (ou ainda não criada no Firebase).', true);
+  } finally { btn.disabled = false; btn.textContent = 'Ativar'; }
+});
 
 // Procura convites agora, sem precisar sair e entrar (o resgate normal só
 // roda no login — por isso quem já estava logado ficava preso nesta tela).
@@ -556,7 +641,7 @@ $('igrejaSwitch').addEventListener('change', async (e)=>{
 
 async function onIgrejaChange(){
   const papel = papelAtual();
-  $('papelChip').textContent = PAPEL_LABEL[papel] || '—';
+  $('papelChip').textContent = state.ehMaster ? 'Master' : (PAPEL_LABEL[papel] || '—');
   $('navUsuarios').style.display = isAdmin() ? 'flex' : 'none';
   $('navImportar').style.display = isAdmin() ? 'flex' : 'none';
   ABAS_CONFIGURAVEIS.forEach(a => {
@@ -695,27 +780,18 @@ function refreshView(name){
 
 // ---------- NOVA IGREJA (bootstrap) ----------
 $('btnCriarIgreja').addEventListener('click', async ()=>{
-  if(!state.podeCriarIgreja){ toast('Apenas administradores podem criar igrejas.', true); return; }
+  if(!state.podeCriarIgreja){ toast('Só o master pode criar igrejas.', true); return; }
   if(!validarObrigatorios([{id:'novaIgrejaNome', nome:'Nome da igreja'}])) return;
   const nome = $('novaIgrejaNome').value.trim();
   const btnCriar = $('btnCriarIgreja');
   btnCriar.disabled = true;   // evita duas igrejas por duplo toque
   try{
-    // bootstrapPendente: permite ao criador gravar o PRÓPRIO vínculo de admin
-    // (regra do Firestore) uma única vez; é desligado logo depois.
+    // O master não vira "usuário" da igreja: ele já enxerga e administra todas
+    // pelo modo master. O administrador dela é cadastrado depois, em Usuários.
     const igrejaRef = await addDoc(collection(db, 'igrejas'), {
       nome, pastor:'', tesoureiro:'', endereco:'', bairro:'', cidade:'', estado:'', cep:'',
       email:'', instagram:'', cnpj:'', logo:null, criadoEm: serverTimestamp(),
-      criadoPor: state.user.uid, origemAdminId: state.origemAdminId, bootstrapPendente: true
-    });
-    await setDoc(doc(db, 'igrejas', igrejaRef.id, 'usuarios', state.user.uid), {
-      uid: state.user.uid, nome: state.perfil.nome, email: state.user.email,
-      papel: 'admin', abasPermitidas: TODAS_ABAS, criadoEm: serverTimestamp()
-    });
-    await updateDoc(doc(db, 'igrejas', igrejaRef.id), { bootstrapPendente: false });
-    await setDoc(doc(db, 'membrosIndice', `${igrejaRef.id}_${state.user.uid}`), {
-      uid: state.user.uid, igrejaId: igrejaRef.id, igrejaNome: nome,
-      papel: 'admin', abas: TODAS_ABAS, nome: state.perfil.nome, email: state.user.email
+      criadoPor: state.user.uid
     });
     // categorias padrão, com base no que a igreja já usava
     const receitasPadrao = ['Dízimo','Oferta de Culto','Oferta Avulsa'];
@@ -723,12 +799,13 @@ $('btnCriarIgreja').addEventListener('click', async ()=>{
     for(const n of receitasPadrao) await addDoc(collection(db,'igrejas',igrejaRef.id,'categoriasReceita'), {nome:n});
     for(const n of despesasPadrao) await addDoc(collection(db,'igrejas',igrejaRef.id,'categoriasDespesa'), {nome:n});
     $('novaIgrejaNome').value = '';
-    toast('Igreja criada!');
+    toast('Igreja criada! Cadastre agora o administrador dela.');
+    state.igrejaAtualId = igrejaRef.id;
     await carregarIgrejasDoUsuario(state.user);
     state.igrejaAtualId = igrejaRef.id;
     $('igrejaSwitch').value = igrejaRef.id;
     await onIgrejaChange();
-    switchView('painel');
+    switchView('usuarios');
   } catch(e){ toast('Erro ao criar igreja: '+e.message, true); }
   finally { btnCriar.disabled = false; }
 });
@@ -769,11 +846,6 @@ async function motivoBloqueioExclusao(igrejaId){
 
 $('btnExcluirIgreja').addEventListener('click', async ()=>{
   if(!isAdmin()){ toast('Apenas administradores podem excluir a igreja.', true); return; }
-  // Sem igreja onde seja admin, a pessoa perderia o direito de criar outra
-  // (e o de excluir): por isso a última igreja de um administrador não sai.
-  if(state.igrejas.filter(i => i.papel === 'admin').length <= 1){
-    toast('Esta é a sua única igreja como administrador. Crie outra antes de excluir esta.', true); return;
-  }
   const btn = $('btnExcluirIgreja');
   btn.disabled = true; btn.textContent = 'Verificando...';
   try{
@@ -2979,20 +3051,32 @@ $('btnSalvarConvite').addEventListener('click', async ()=>{
   } catch(e){
     if(e.code === 'auth/email-already-in-use'){
       // A pessoa já tem conta própria (de outra igreja ou uso anterior).
-      // Nesse caso, criamos um convite: quando ela entrar com a conta dela,
-      // o acesso libera sozinho.
+      // SEM convite: o índice usuariosPorEmail (gravado no login de cada
+      // pessoa) informa o uid, e o admin grava o vínculo direto — o acesso
+      // vale na hora, com as permissões escolhidas aqui.
       try{
-        await setDoc(doc(db,'igrejas',state.igrejaAtualId,'convites', email), {
-          email, papel, abas, criadoPor: state.user.uid, criadoEm: serverTimestamp()
+        const idx = await getDoc(doc(db,'usuariosPorEmail', email));
+        if(!idx.exists()){
+          $('convResultado').style.display = 'block';
+          $('convResultado').innerHTML = `<strong>${email}</strong> já tem conta, mas ainda não entrou no app na versão atual, então não consigo localizá-la. Peça para ela <b>abrir o app e entrar uma vez</b> com esse e-mail e cadastre de novo.`;
+          toast('Peça para a pessoa entrar uma vez no app e tente de novo.', true);
+          return;
+        }
+        const novoUid = idx.data().uid;
+        const nomeFinal = idx.data().nome || nome;
+        await setDoc(doc(db,'igrejas',state.igrejaAtualId,'usuarios', novoUid), {
+          uid: novoUid, nome: nomeFinal, email, papel, abasPermitidas: abas,
+          precisaTrocarSenha: false, criadoEm: serverTimestamp()
         });
-        await setDoc(doc(db,'convitesIndice', `${state.igrejaAtualId}_${email}`), {
-          email, igrejaId: state.igrejaAtualId, igrejaNome: igrejaAtual()?.nome || '', papel, abas
+        await setDoc(doc(db,'membrosIndice', `${state.igrejaAtualId}_${novoUid}`), {
+          uid: novoUid, igrejaId: state.igrejaAtualId, igrejaNome: igrejaAtual()?.nome || '',
+          papel, abas, nome: nomeFinal, email, precisaTrocarSenha: false
         });
         $('convResultado').style.display = 'block';
-        $('convResultado').innerHTML = `Esse e-mail já tem uma conta no app. Criamos um convite: quando <strong>${email}</strong> entrar com a conta que já tem, o acesso a esta igreja libera sozinho.`;
-        toast('Convite registrado (a pessoa já tinha conta).');
+        $('convResultado').innerHTML = `<strong>Acesso liberado!</strong> ${email} já tinha conta e usa a senha dela mesma. A igreja aparece no seletor assim que ela abrir ou atualizar o app (a senha digitada aqui foi ignorada).`;
+        toast('Acesso liberado direto (a pessoa já tinha conta).');
         renderUsuarios();
-      } catch(e2){ toast('Erro ao registrar convite: '+e2.message, true); }
+      } catch(e2){ toast('Erro ao liberar acesso: '+e2.message, true); }
     } else {
       toast('Erro ao cadastrar: ' + traduzErroAuth(e.code || '') , true);
     }
