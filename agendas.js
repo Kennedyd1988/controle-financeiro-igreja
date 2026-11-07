@@ -152,6 +152,9 @@ function injetarEstilos(){
   .ag-status{font-size:11.5px; padding:2px 9px; border-radius:99px; font-weight:600;}
   .ag-status.rascunho{background:#fff3e0; color:#b26a00;} .ag-status.publicada{background:var(--green-dim); color:var(--green);}
   .ag-acoes{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;}
+  .ag-lembretes{background:#fff8e1; border:1px solid #f1c76b; border-left:4px solid #e0a020; color:#6d4700; border-radius:8px; padding:10px 12px; font-size:13px; margin-bottom:10px;}
+  .ag-lembretes .item{display:flex; justify-content:space-between; align-items:center; gap:8px; padding:3px 0;}
+  .ag-lembretes .quando{font-weight:600; white-space:nowrap;}
   .ag-aviso{background:#fff8e1; border:1px solid #ffe0a3; color:#8a5a00; border-radius:8px; padding:8px 12px; font-size:12.5px; margin-bottom:10px;}
   .ag-dia{border:1px solid var(--line); border-left:4px solid var(--brand); border-radius:10px; background:var(--surface); padding:10px 12px; margin-bottom:10px;}
   .ag-dia-head{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;}
@@ -245,7 +248,29 @@ async function carregarSemana(ini){
 async function renderSemanaTela(){
   if(!S.semanaIni) S.semanaIni = segundaDe(hojeISO());
   await carregarSemana(S.semanaIni);
+  // Os lembretes alimentam o aviso do topo da semana. Se a leitura falhar
+  // (permissão/rede), a agenda abre normalmente, só sem o aviso.
+  try{ await garantirLembretes(); }catch(e){ console.warn('Lembretes não carregados para o aviso da semana:', e); }
   desenharSemana();
+}
+
+// Lembretes que merecem aviso na semana exibida: (1) os que caem dentro dela e
+// (2) quando a semana contém o dia de hoje, os que já entraram na janela de
+// "avisar X dias antes" mesmo caindo depois. Não mexe nos dados da agenda nem
+// vai para o PDF: é só um aviso para não esquecer.
+function lembretesDaSemana(ini){
+  const fim = addDias(ini,6), hoje = hojeISO();
+  const diasAte = (a,b)=> Math.round((parseISO(a) - parseISO(b)) / 86400000);
+  const lista = [];
+  (S.lembretes||[]).forEach(l=>{
+    const dentro = ocorrenciaNoIntervalo(l, ini, fim);
+    if(dentro){ lista.push({ l, data: dentro, tipo:'semana' }); return; }
+    if(hoje >= ini && hoje <= fim){
+      const prox = proximaOcorrencia(l, hoje);
+      if(prox && prox > fim && diasAte(prox, hoje) <= (l.antecedencia||0)) lista.push({ l, data: prox, tipo:'chegando', falta: diasAte(prox, hoje) });
+    }
+  });
+  return lista.sort((a,b)=> a.data.localeCompare(b.data));
 }
 function resumoConflitos(ag){
   const mapa = new Map();
@@ -353,6 +378,7 @@ function desenharSemana(){
       ${ed ? `<button class="btn" id="agBtnDupSemana">Duplicar semana…</button>` : ''}
       ${ed ? `<button class="btn" id="agBtnMsgs">Gerar mensagens da semana…</button>` : ''}
     </div>
+    ${htmlAvisoLembretes(ag, ed, ehBloq)}
     ${ehBloq ? '<div class="ag-aviso">Agenda publicada: está travada contra edição. Use "Reabrir para edição" para alterar.</div>' : ''}
     ${conflitos.length ? `<div class="ag-aviso"><b>Atenção — participação repetida na semana</b> (apenas um aviso):<br>${conflitos.map(c => `${h(c.nome)}: ${c.itens.map(h).join(', ')}`).join('<br>')}</div>` : ''}
     <div id="agDias">${diasHtml}</div>
@@ -366,6 +392,24 @@ function desenharSemana(){
       </div>
     </div>`;
   ligarEventosSemana();
+}
+
+function htmlAvisoLembretes(ag, ed, ehBloq){
+  const itens = lembretesDaSemana(S.semanaIni);
+  if(!itens.length) return '';
+  const hoje = hojeISO();
+  const linhas = itens.map(({l, data, tipo, falta}, i)=>{
+    const idx = Math.round((parseISO(data) - parseISO(S.semanaIni)) / 86400000);
+    const quando = tipo === 'chegando'
+      ? `${dmy(data)} — ${falta === 0 ? 'hoje' : falta === 1 ? 'amanhã' : `em ${falta} dias`}`
+      : `${DIAS[idx]} ${dmy(data)}${data === hoje ? ' — hoje' : data < hoje ? ' — já passou' : ''}`;
+    // Só oferece o atalho para a Agenda Pastoral se o item cai nesta semana e ainda não foi incluído.
+    const jaTem = tipo !== 'semana' || (ag.pastoral||[]).some(p => p.texto === l.titulo && p.dia === idx);
+    const podeAdd = ed && !ehBloq && !jaTem;
+    return `<div class="item"><div><span class="quando">${quando}</span> · ${h(l.titulo)}${l.obs ? `<span class="abas-hint"> — ${h(l.obs)}</span>` : ''}</div>
+      ${podeAdd ? `<button class="btn btn-sm" data-act="lembpast" data-i="${i}">+ Agenda pastoral</button>` : ''}</div>`;
+  }).join('');
+  return `<div class="ag-lembretes"><b>🔔 Lembretes — não esqueça</b>${linhas}</div>`;
 }
 
 function ligarEventosSemana(){
@@ -412,6 +456,13 @@ function ligarEventosSemana(){
     else if(act === 'addpast'){ S.agenda.pastoral.push({ id: uid(), dia: 0, texto:'' }); marcarSujo(); desenharSemana(); }
     else if(act === 'delpast'){ S.agenda.pastoral.splice(idx,1); marcarSujo(); desenharSemana(); }
     else if(act === 'implemb') importarLembretesDaSemana();
+    else if(act === 'lembpast'){
+      // Atalho do aviso: leva só este lembrete para a Agenda Pastoral da semana.
+      const it = lembretesDaSemana(S.semanaIni)[idx]; if(!it) return;
+      const dia = Math.round((parseISO(it.data) - parseISO(S.semanaIni)) / 86400000);
+      if(!S.agenda.pastoral.some(p => p.texto === it.l.titulo && p.dia === dia)) S.agenda.pastoral.push({ id: uid(), dia, texto: it.l.titulo });
+      marcarSujo(); desenharSemana(); C.toast('Incluído na Agenda Pastoral. Lembre-se de salvar a semana.');
+    }
   };
   cont.oninput = (e)=>{
     const el = e.target; const f = el.dataset.f; if(!f || bloqueada()) return;

@@ -11,7 +11,7 @@ import {
   getAggregateFromServer, sum
 } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
 
-import { iniciarAgendas, renderAgendas, resetarAgendas, renderPainelAgendas, FUNCOES_PADRAO } from "./agendas.js?v=16";
+import { iniciarAgendas, renderAgendas, resetarAgendas, renderPainelAgendas, FUNCOES_PADRAO } from "./agendas.js?v=23";
 import { pdfMensal, pdfCaeb, pdfAnual, pdfFiel, pdfExtrato, pdfCampanha } from "./relatorios-pdf.js?v=22";
 
 const app = initializeApp(firebaseConfig);
